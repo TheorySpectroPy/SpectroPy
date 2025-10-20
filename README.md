@@ -97,8 +97,8 @@ python calculate_spectrum.py
 
 **Outputs**:  
 - `Raman_tensor.dat`: The full complex Raman tensor for each vibrational mode.  
-- `Raman_intensity_specific.dat`: A plottable (Frequency vs. Intensity) spectrum for your chosen polarization geometry.  
-- `Raman_intensity_averaged.dat`: A plottable spectrum simulating a randomly oriented or powder sample.
+- `Raman_intensity_specific.dat`: Frequency, intensity, and irreducible representations for your chosen polarization geometry.  
+- `Raman_intensity_averaged.dat`: Frequency, intensity, and irreducible representations for a randomly oriented or powder sample.
 
 ---
 
@@ -121,7 +121,7 @@ This will automatically call `calculate_dielectric_derivatives.py` for each ener
 
 ### Pre-defining Experimental Geometry
 
-To avoid the interactive prompts in `calculate_spectrum.py`, you can create a file named `input` with the following format:
+To avoid some of the interactive prompts in `calculate_spectrum.py`, you can create a file named `input` with the following format:
 
 ```
 1.0 0.0 0.0   ! polarization of the incident light
