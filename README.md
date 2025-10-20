@@ -75,7 +75,7 @@ python calculate_dielectric_derivatives.py
 
 **Action**:  
 - Prompts you to enter the laser frequency in eV.  
-- Automatically collects all `vasprun.xml` files from the `raman_poscar_*` directories and copies them to a new `AXML` folder.  
+- Automatically collects all `vasprun.xml` files from the `raman_poscar_*` directories and copies them to a new `vasprun` folder.  
 - Calculates the derivative of the dielectric tensor with respect to each atomic displacement.  
 
 **Outputs**:  
