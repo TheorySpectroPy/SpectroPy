@@ -48,8 +48,8 @@ def run_calculate_dielectric_derivatives_static():
         if not os.path.exists(f):
             print(f"***** {f} not found *****")
             sys.exit(1)
-    if not os.path.exists("AXML"):
-        print("***** AXML directory not found. Did you run 'kopia'? *****")
+    if not os.path.exists("vasprun"):
+        print("***** vasprun directory not found. Did you run 'kopia'? *****")
         sys.exit(1)
         
     # --- Preamble ---
@@ -85,7 +85,7 @@ def run_calculate_dielectric_derivatives_static():
         displacements.append({'label': parts[0], 'index': int(parts[1]), 'vector': np.array(list(map(float, parts[2:5])))})
     
     # --- 3. Process XML files and collect dielectric tensors ---
-    print("Processing vasprun.xml files from AXML directory...")
+    print("Processing vasprun.xml files from vasprun directory...")
     all_epsilons = np.zeros((num_disps, 3, 3))
     cart_disps = np.zeros((num_disps, 3))
     
@@ -106,7 +106,7 @@ def run_calculate_dielectric_derivatives_static():
             disp_counter[label] += 1
             
             xml_filename = f"{label}{suffix}.xml"
-            xml_path = os.path.join("AXML", xml_filename)
+            xml_path = os.path.join("vasprun", xml_filename)
             
             epsilon = read_static_diel_from_xml(xml_path)
             if epsilon is None:
@@ -150,7 +150,6 @@ def run_calculate_dielectric_derivatives_static():
             eps_deriv[i, alpha, :, :] = (eps_plus - eps_minus) / denominator
     
     
-    # Unit conversions from Fortran code
     pi = np.pi
     cell_volume = np.linalg.det(lattice_vectors)
     conv_factor = cell_volume / (4 * pi)
