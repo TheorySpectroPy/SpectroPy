@@ -89,9 +89,9 @@ def read_dielectric_derivatives(filepath, total_atoms):
     real_start_idx = -1
     imag_start_idx = -1
     for i, line in enumerate(lines):
-        if "! The Real Part of Raman tensor:" in line:
+        if "! The Real Part of dielectric tensor derivatives:" in line:
             real_start_idx = i + 1
-        if "! The Imaginary Part of Raman tensor:" in line:
+        if "! The Imaginary Part of dielectric tensor derivatives:" in line:
             imag_start_idx = i + 1
 
     def is_float(s):
@@ -180,7 +180,7 @@ def run_raman_tensor():
             dielectric_derivatives_path = f
             break
     if dielectric_derivatives_path is None:
-        print("***** dielectric_derivatives_<freq> not found. Did you run genRAram610.py? *****")
+        print("***** dielectric_derivatives_<freq> not found. Did you run calculate_dielectric_derivatives.py? *****")
         sys.exit(1)
 
     # --- Get Inputs ---

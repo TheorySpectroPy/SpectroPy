@@ -3,6 +3,7 @@ import os
 import sys
 import shutil
 from collections import defaultdict
+import subprocess
 
 def run_generate_displacements():
     """
@@ -72,7 +73,7 @@ def run_generate_displacements():
         displacements.append({'label': label, 'index': atom_index, 'vector': vector})
 
     # --- 4. Generate displaced POSCAR files and 'collect_results.sh' script ---
-    print(f"Generating {num_disps} displaced POSCAR files (pos_*)...")
+    print(f"Generating {num_disps} displaced POSCAR files (poscar*)...")
     
     alphabet = "abcdefghijklmnopqrstuvwxyz"
     # Use a dictionary to count displacements for each atom label (e.g., W1, Te1)
@@ -81,7 +82,7 @@ def run_generate_displacements():
     with open("collect_results.sh", "w") as f_collect:
         f_collect.write("#!/bin/bash\n")
         f_collect.write("#\n")
-        f_collect.write("mkdir -p AXML\n")
+        f_collect.write("mkdir -p vasprun\n")
         f_collect.write("#\n")
 
         for disp_data in displacements:
@@ -93,11 +94,11 @@ def run_generate_displacements():
             suffix = alphabet[disp_counter[label]]
             disp_counter[label] += 1
             
-            poscar_filename = f"pos_{label}{suffix}"
+            poscar_filename = f"poscar_{label}{suffix}"
             
             # Write the copy command to the collect_results.sh script
             xml_name = f"{label}{suffix}"
-            f_collect.write(f"cp ra_{poscar_filename}/vasprun.xml AXML/{xml_name}.xml\n")
+            f_collect.write(f"cp raman_{poscar_filename}/vasprun.xml vasprun/{xml_name}.xml\n")
 
             # Create the new displaced POSCAR
             with open(poscar_filename, "w") as f_pos:
@@ -118,31 +119,39 @@ def run_generate_displacements():
                 for pos in new_positions:
                     f_pos.write(f"  {pos[0]:.16f} {pos[1]:.16f} {pos[2]:.16f}\n")
 
-    # --- 5. Generate the 'setup_vasp_calcs.sh' script ---
-    print("Generating setup_vasp_calcs.sh script...")
-    with open("setup_vasp_calcs.sh", "w") as f_run:
+# --- 5. Generate and Execute the 'setup_vasp_calcs.sh' script ---
+    script_name = "setup_vasp_calcs.sh"
+    print(f"Generating {script_name}...")
+    with open(script_name, "w") as f_run:
         f_run.write("#!/bin/bash\n")
         f_run.write("# This script sets up a calculation directory for each displaced POSCAR.\n")
-        f_run.write("# After running this, you will need to run VASP in each 'ra_pos_*' subdirectory.\n")
+        f_run.write("# After running this, you will need to run VASP in each 'raman_poscar_*' subdirectory.\n")
         f_run.write("\n")
-        f_run.write("for d in pos_*; do\n")
-        f_run.write("  echo \"Setting up directory for $d\"\n")
-        f_run.write("  mkdir -p ra_$d\n")
-        f_run.write("  cp $d ra_$d/POSCAR\n")
-        f_run.write("  ln -sf ../KPOINTS ra_$d/KPOINTS\n")
-        f_run.write("  ln -sf ../POTCAR ra_$d/POTCAR\n")
-        f_run.write("  ln -sf ../INCAR ra_$d/INCAR\n")
+        f_run.write("for d in poscar_*; do\n")
+        f_run.write("  folder_name=\"raman_$d\"\n") 
+        f_run.write("  echo \"Setting up directory for $folder_name\"\n")
+        f_run.write("  mkdir -p \"$folder_name\"\n")
+        f_run.write("  cp \"$d\" \"$folder_name/POSCAR\"\n")
+        f_run.write("  ln -sf ../KPOINTS \"$folder_name/KPOINTS\"\n")
+        f_run.write("  ln -sf ../POTCAR \"$folder_name/POTCAR\"\n")
+        f_run.write("  ln -sf ../INCAR \"$folder_name/INCAR\"\n")
         if os.path.exists("vdw_kernel.bindat"):
-            f_run.write("  ln -sf ../vdw_kernel.bindat ra_$d/vdw_kernel.bindat\n")
+            f_run.write("  ln -sf ../vdw_kernel.bindat \"$folder_name/vdw_kernel.bindat\"\n")
         f_run.write("done\n")
         f_run.write("\n")
         f_run.write("echo \"All calculation directories have been set up.\"\n")
+    
+    # --- Automatically make the script executable and run it ---
+    print(f"Making {script_name} executable...")
+    os.chmod(script_name, 0o755) # 0o755 gives read/write/execute permissions for user -- note why this is needed by reading the script above
+
+    print(f"Executing '{script_name}' to create calculation directories...")
+    # The 'check=True' will cause the script to stop if the bash script fails
+    subprocess.run(["./" + script_name], check=True)
         
     print("\nprepare_vasp_inputs.py finished successfully.")
-    print("Generated 'pos_*' files, 'collect_results.sh', and 'setup_vasp_calcs.sh'.")
-    print("Next steps:")
-    print("1. Make the setup script executable: chmod +x setup_vasp_calcs.sh")
-    print("2. Execute the script to create directories: ./setup_vasp_calcs.sh")
+    print("Generated 'poscar*' files, 'collect_results.sh', and all 'raman_poscar_*' subdirectories.")
+    print("\nNext step: Run your VASP calculations in each subdirectory.")
 
 # This makes the script runnable from the command line
 if __name__ == "__main__":

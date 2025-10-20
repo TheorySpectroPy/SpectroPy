@@ -71,7 +71,7 @@ def run_generate_derivatives():
     displacements = [{'label': line.split()[0]} for line in displacements_lines[2 : 2 + num_disps]]
 
     print("Collecting vasprun.xml files...")
-    os.makedirs("AXML", exist_ok=True)
+    os.makedirs("vasprun", exist_ok=True)
     
     alphabet = "abcdefghijklmnopqrstuvwxyz"
     disp_counter = defaultdict(int)
@@ -81,10 +81,10 @@ def run_generate_derivatives():
         suffix = alphabet[disp_counter[label]]
         disp_counter[label] += 1
         
-        source_dir_name = f"ra_pos_{label}{suffix}"
+        source_dir_name = f"raman_poscar_{label}{suffix}"
         source_path = os.path.join(source_dir_name, "vasprun.xml")
         dest_filename = f"{label}{suffix}.xml"
-        dest_path = os.path.join("AXML", dest_filename)
+        dest_path = os.path.join("vasprun", dest_filename)
         
         try:
             shutil.copyfile(source_path, dest_path)
@@ -93,7 +93,7 @@ def run_generate_derivatives():
             print("Please ensure all VASP calculations have finished.")
             sys.exit(1)
             
-    print("File collection complete. AXML directory is ready.")
+    print("File collection complete. vasprun directory is ready.")
     print("-" * 40)
         
     print("Program <calculate_dielectric_derivatives.py>")
@@ -124,7 +124,7 @@ def run_generate_derivatives():
         parts = line.split()
         displacements.append({'label': parts[0], 'index': int(parts[1]), 'vector': np.array(list(map(float, parts[2:5])))})
     
-    print("Processing vasprun.xml files from AXML directory...")
+    print("Processing vasprun.xml files from vasprun directory...")
     all_eps_real = np.zeros((num_disps, 3, 3))
     all_eps_imag = np.zeros((num_disps, 3, 3))
     cart_disps = np.zeros((num_disps, 3))
@@ -143,7 +143,7 @@ def run_generate_derivatives():
             disp_counter[label] += 1
             
             xml_filename = f"{label}{suffix}.xml"
-            xml_path = os.path.join("AXML", xml_filename)
+            xml_path = os.path.join("vasprun", xml_filename)
             
             eps_real, eps_imag = read_diel_from_xml(xml_path, target_frequency)
             if eps_real is None: sys.exit(1)
@@ -203,7 +203,7 @@ def run_generate_derivatives():
         unique_atom_labels = [d['label'] for d in displacements[::6]]
         unique_atom_indices = [d['index'] for d in displacements[::6]]
 
-        f.write("! The Real Part of Raman tensor:\n")
+        f.write("! The Real Part of dielectric tensor derivatives:\n")
         for i, label in enumerate(unique_atom_labels):
             pos = positions[unique_atom_indices[i]-1]
             f.write(f"      {label:<4s} {pos[0]:10.6f} {pos[1]:10.6f} {pos[2]:10.6f}\n")
@@ -216,7 +216,7 @@ def run_generate_derivatives():
             for row in tensor_to_print:
                 f.write("".join([f"{x:16.4f}" for x in row]) + "\n")
         
-        f.write("\n! The Imaginary Part of Raman tensor:\n")
+        f.write("\n! The Imaginary Part of dielectric tensor derivatives:\n")
         for i, label in enumerate(unique_atom_labels):
             pos = positions[unique_atom_indices[i]-1]
             f.write(f"      {label:<4s} {pos[0]:10.6f} {pos[1]:10.6f} {pos[2]:10.6f}\n")
