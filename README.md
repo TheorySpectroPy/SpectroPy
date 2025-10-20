@@ -96,9 +96,9 @@ python calculate_spectrum.py
 - Calculates the final Mode Raman Tensors and corresponding intensities.  
 
 **Outputs**:  
-- `mode_tensors.dat`: The full complex Raman tensor for each vibrational mode.  
-- `spectrum_specific.dat`: A plottable (Frequency vs. Intensity) spectrum for your chosen polarization geometry.  
-- `spectrum_averaged.dat`: A plottable spectrum simulating a randomly oriented or powder sample.
+- `Raman_tensor.dat`: The full complex Raman tensor for each vibrational mode.  
+- `Raman_intensity_specific.dat`: A plottable (Frequency vs. Intensity) spectrum for your chosen polarization geometry.  
+- `Raman_intensity_averaged.dat`: A plottable spectrum simulating a randomly oriented or powder sample.
 
 ---
 
