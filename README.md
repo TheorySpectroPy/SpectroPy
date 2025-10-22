@@ -80,7 +80,7 @@ python calculate_dielectric_derivatives.py
 
 **Outputs**:  
 - `EPSILON_<freq>.dat`: A log file containing the dielectric tensor for each displacement.  
-- `dielectric_derivatives_<freq>.dat`: The final calculated atomic Raman tensors (dielectric tensor derivatives) for the specified frequency.
+- `dielectric_derivatives_<freq>.dat`: The final calculated atomic Raman tensors (dielectric tensor derivatives with respect to the atomic displacements) for the specified frequency.
 
 ### Step 6: Calculate the Final Spectrum
 
