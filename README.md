@@ -8,6 +8,7 @@ A Python toolkit for simulating Raman spectra from first-principles calculations
 - **Data Harvesting**: Automatically collects results from multiple `vasprun.xml` files.
 - **Frequency-Dependent Tensors**: Calculates complex Raman tensors for a user-specified laser frequency.
 - **Spectrum Simulation**: Produces final, plottable spectra for both specific polarization geometries and orientation-averaged cases.
+- **Mode Visualization**: Generates output files for visualizing phonon modes in **VMD** or **VESTA**.
 
 ---
 
@@ -128,5 +129,47 @@ To avoid some of the interactive prompts in `calculate_spectrum.py`, you can cre
 0.0 1.0 0.0   ! polarization of the scattered light
 z             ! the surface normal (or out-of-plane) direction
 ```
+
+# Additional Utilities
+
+## Visualizing Phonon Modes (`visualize_modes.py`)
+
+This script generates files to visualize the atomic motion of each phonon mode in either **VMD** or **VESTA**.
+
+---
+
+### How to use:
+
+#### For VESTA (Recommended):
+
+1. Open your `CONTCAR` file in **VESTA**.  
+2. Save the file as a VESTA project file (e.g., `template.vesta`) in your working directory.
+
+---
+
+### Run the script:
+```bash
+python visualize_modes.py
+```
+
+### Answer the prompts:
+
+- **Arrow scaling factor:** A number to control the arrow length (e.g., `0.5`). A negative value can be used to reverse the arrow direction.
+- **Select output format:** Type `e` for **VESTA**, `v` for **VMD**, or `b` for **Both**.
+- **Enter template file:** (If you chose VESTA) Type the name of the file you saved in step 1 (e.g., `template.vesta`).
+
+---
+
+### Output
+
+The script will generate new folders (`VESTA_MODES` and/or `VMD_MODES`) containing the visualization files for each mode.
+
+- **`.vesta` files:** Open these in **VESTA** to see the structure and arrows automatically.  
+- **`.vmd` files:** Open **VMD**, go to `Extensions > Tk Console`, and type:
+  ```tcl
+  source VMD_MODES/mode_001.vmd
+  ```
+  to load the arrows for mode 1.
+
 
 
