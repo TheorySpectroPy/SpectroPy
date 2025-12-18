@@ -105,6 +105,23 @@ python calculate_spectrum.py
 
 ## Advanced Usage
 
+### Publication-Quality Plotting (`generate_raman_plots.py`)
+
+This script automates the generation of publication-quality Raman spectra plots (with Lorentzian/Gaussian broadening) for every calculation in your project directory.
+
+![Example Raman Spectrum Plot](docs/images/Raman_plot_MoS2.png)
+
+**Features:**
+- **Batch Processing:** Automatically scans all subdirectories for `Raman_intensity_specific.dat`.
+- **Publication Style:** Uses LaTeX formatting (so you will need it installed), inward ticks, and professional styling.
+- **Smart Labeling:** Automatically labels prominent peaks with their mode symmetry (e.g., $E_{2g}$), using arrows to point to the curve.
+
+**How to use:**
+1. Place `generate_raman_plots.py` in your top-level project folder (e.g., `TMDs`).
+2. Run the script:
+   ```bash
+   python generate_raman_plots.py
+
 ### Automating Energy Scans
 
 To calculate the Raman response over a range of laser frequencies, you can use the provided `run_energy_scan.sh` script.
