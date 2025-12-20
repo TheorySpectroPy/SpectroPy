@@ -70,3 +70,5 @@ python ../../generate_raman_plots.py
 
 **Final Result:**  
 A file named `Raman_plot_styled.png` will be generated. It should look identical to the reference image.
+
+![Example Raman Spectrum Plot](../docs/images/Raman_plot_MoS2.png)
