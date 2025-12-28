@@ -189,4 +189,25 @@ The script will generate new folders (`VESTA_MODES` and/or `VMD_MODES`) containi
   to load the arrows for mode 1.
 
 
+## Citation
+
+If you use **SpectroPy** in your research, please cite our paper:
+
+> **Raman Digital Twin of Monolayer Janus Transition Metal Dichalcogenides**
+> *Johnathan Kowalski and Liangbo Liang*
+> *ACS Applied Materials & Interfaces*, **2025**, *Article ASAP*
+> **DOI:** [10.1021/acsami.5c20316](https://doi.org/10.1021/acsami.5c20316)
+
+### BibTeX
+
+```bibtex
+@article{SpectroPy_Janus2025,
+  author = {Kowalski, Johnathan and Liang, Liangbo},
+  title = {Raman Digital Twin of Monolayer Janus Transition Metal Dichalcogenides},
+  journal = {ACS Applied Materials \& Interfaces},
+  year = {2025},
+  note = {Article ASAP},
+  doi = {10.1021/acsami.5c20316},
+  url = {[https://doi.org/10.1021/acsami.5c20316](https://doi.org/10.1021/acsami.5c20316)}
+}
 
