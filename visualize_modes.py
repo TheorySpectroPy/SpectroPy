@@ -103,7 +103,7 @@ def write_vmd_script(filename, positions, displacements, l_cylinder, l_cone):
             f.write(f"draw cylinder {{{p1[0]:.6f} {p1[1]:.6f} {p1[2]:.6f}}} {{{p2[0]:.6f} {p2[1]:.6f} {p2[2]:.6f}}} radius 0.1 resolution 30 filled yes\n")
             f.write(f"draw cone {{{p2[0]:.6f} {p2[1]:.6f} {p2[2]:.6f}}} {{{p3[0]:.6f} {p3[1]:.6f} {p3[2]:.6f}}} radius 0.2 resolution 30\n")
 
-def write_vesta_file(filename, template_content, displacements, n_atoms, scale_factor, freq_cm1):
+def write_vesta_file(filename, template_content, displacements, n_atoms, scale_factor, freq_cm1, structure=None):
     """
     Writes a new .vesta file by injecting vector data into a template
     based on a working example.
@@ -136,6 +136,8 @@ def write_vesta_file(filename, template_content, displacements, n_atoms, scale_f
     
     content.append('VECTR')
     scaled_disps = displacements * scale_factor
+    if structure is not None:
+        scaled_disps = scaled_disps @ np.linalg.inv(structure["lattice_vectors"])
     for i in range(n_atoms):
         vec = scaled_disps[i]
         content.append(f"  {i+1:3d}  {vec[0]:10.5f}{vec[1]:10.5f}{vec[2]:10.5f} 0")
@@ -216,12 +218,13 @@ def run_visualization():
         if write_vesta:
             filename_vesta = os.path.join("VESTA_MODES", f"mode_{i+1:03d}_({freq_cm1:.1f}cm-1).vesta")
             write_vesta_file(
-                filename_vesta, 
-                vesta_template_content, 
-                eigendisps[i], 
-                n_atoms, 
+                filename_vesta,
+                vesta_template_content,
+                eigendisps[i],
+                n_atoms,
                 factor,
-                freq_cm1 
+                freq_cm1,
+                structure=structure,
             )
 
     print(f"\nGenerated {n_modes} file(s) for the primitive cell.")
@@ -297,14 +300,14 @@ def run_visualization():
                 write_vmd_script(filename_vmd, structure_supercell["positions_cart"], supercell_disps, l_cylinder, l_cone)
             if write_vesta:
                 filename_vesta = os.path.join("VESTA_MODES", f"mode_super_{i+1:03d}_({freq_cm1:.1f}cm-1).vesta")
-                # We need to re-read the template content because the original template is for the primitive cell
                 write_vesta_file(
                     filename_vesta,
-                    vesta_template_content, # Note: This is still the primitive cell template
+                    vesta_template_content,
                     supercell_disps,
                     structure_supercell["total_atoms"],
                     factor,
-                    freq_cm1
+                    freq_cm1,
+                    structure=structure_supercell,
                 )
         
         print(f"Generated {n_modes} file(s) for the supercell.")
