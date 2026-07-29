@@ -35,7 +35,6 @@ spectropy = "spectropy_cli:main"
 [tool.setuptools]
 py-modules = [
     "calculate_dielectric_derivatives",
-    "calculate_dielectric_derivatives_static",
     "calculate_spectrum",
     "create_displacements",
     "generate_minimal_displacements",

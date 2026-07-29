@@ -94,12 +94,30 @@ def run_generate_atoms(
         for atom_index in representatives:
             output.write(f"{atom_labels[atom_index - 1]:<5s}{atom_index:6d}\n")
 
+    with open("atomic_displacement", "w") as output:
+        output.write(
+            f"Atomic displacements are {amplitude:6.3f} {amplitude:6.3f} {amplitude:6.3f} "
+            "Angstrom in Cartesian coordinates along x, y, and z directions\n"
+        )
+        output.write(
+            f"{len(representatives):6d} number of atoms with displacements, and atom symbols and indices shown below\n"
+        )
+        for atom_index in representatives:
+            output.write(f"atom{atom_index:<5d}{atom_index:6d}\n")
+        output.write(f"\n{len(representatives) * 6:6d} number of displacements in fractional coordinates\n")
+        for atom_index in representatives:
+            for displacement in fractional_displacements:
+                output.write(
+                    f"atom{atom_index:<5d}{atom_index:6d}"
+                    f"{displacement[0]:12.6f}{displacement[1]:12.6f}{displacement[2]:12.6f}\n"
+                )
+
     print(
         f"Generated {len(representatives) * 6} +/- Cartesian displacements for "
         f"{len(representatives)} symmetry-inequivalent atom(s) "
         f"(out of {total_atoms} total atoms)."
     )
-    print("Wrote ref_poscar.vasp and displacements.dat.")
+    print("Wrote ref_poscar.vasp, displacements.dat, and atomic_displacement.")
 
 
 if __name__ == "__main__":  # pragma: no cover

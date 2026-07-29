@@ -110,8 +110,24 @@ def run_displacements(contcar_path="CONTCAR"):
             atom_label = ineq_atom_symbols[atom_idx]
             f.write(f"{atom_label:<5s}{atom_idx + 1:6d}\n")
 
+    # Raman-pipeline-compatible bookkeeping file.  Keep displacements.dat for
+    # the existing Python preparation code, and also write the established
+    # atomic_displacement convention used by the MoS2 workflow.
+    with open("atomic_displacement", "w") as f:
+        f.write(
+            f"Atomic displacements are {displacement_val:6.3f} {displacement_val:6.3f} "
+            f"{displacement_val:6.3f} Angstrom in Cartesian coordinates along x, y, and z directions\n"
+        )
+        f.write(f"{total_atoms:6d} number of atoms with displacements, and atom symbols and indices shown below\n")
+        for atom_idx in range(total_atoms):
+            f.write(f"atom{atom_idx + 1:<5d}{atom_idx + 1:6d}\n")
+        f.write(f"\n{total_atoms * 6:6d} number of displacements in fractional coordinates\n")
+        for atom_idx in range(total_atoms):
+            for disp in frac_disps:
+                f.write(f"atom{atom_idx + 1:<5d}{atom_idx + 1:6d}{disp[0]:12.6f}{disp[1]:12.6f}{disp[2]:12.6f}\n")
+
     print("\ndisplacements.dat.py finished successfully.")
-    print("Generated ref_poscar.vasp and displacements.dat.")
+    print("Generated ref_poscar.vasp, displacements.dat, and atomic_displacement.")
 
 if __name__ == "__main__":
     run_displacements()

@@ -31,6 +31,16 @@ def _commands(mode: str) -> dict[str, tuple[str, Callable[[], None]]]:
                 getattr(importlib.import_module(module), function)()
         return run
 
+    def derivatives() -> None:
+        getattr(importlib.import_module("process_symmetry"), "run_mapping")()
+        getattr(
+            importlib.import_module("calculate_dielectric_derivatives"),
+            "run_generate_derivatives_for_input",
+        )()
+
+    def spectrum() -> None:
+        getattr(importlib.import_module("calculate_spectrum"), "run_raman_tensors_for_input")()
+
     if mode == "full":
         prepare = stages(
             ("create_displacements", "run_displacements"),
@@ -57,19 +67,12 @@ def _commands(mode: str) -> dict[str, tuple[str, Callable[[], None]]]:
             prepare,
         ),
         "derivatives": (
-            "Process Phonopy symmetry and write frequency-dependent dielectric derivatives.",
-            stages(
-                ("process_symmetry", "run_mapping"),
-                ("calculate_dielectric_derivatives", "run_generate_derivatives"),
-            ),
-        ),
-        "static-derivatives": (
-            "Read static dielectric outputs and write static derivatives.",
-            stage("calculate_dielectric_derivatives_static", "run_calculate_dielectric_derivatives_static"),
+            "Process symmetry and evaluate derivatives at every laser energy in input.",
+            derivatives,
         ),
         "spectrum": (
-            "Build Placzek Raman tensors and intensities from band.yaml.",
-            stage("calculate_spectrum", "run_raman_tensor"),
+            "Build Raman tensors and intensities for every laser energy in input.",
+            spectrum,
         ),
         "plot": (
             "Interactively broaden and plot generated Raman intensities.",
