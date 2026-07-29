@@ -2,7 +2,7 @@
 Reconstructs the full per-atom dielectric-derivative tensor D_ijk (i,j the
 dielectric-tensor indices, k the Cartesian displacement direction) from the
 reduced set of directions phonopy's generate_displacements() decided were
-sufficient (see generate_minimal_displacements.py), plus expands from
+sufficient, plus expands from
 symmetry-independent atoms to all atoms.
 
 This is the piece calculate_spectrum.py's read_dielectric_derivatives()
@@ -199,7 +199,7 @@ def compute_atom_tensor(measured_raw, site_symmetry_cart, atol=1e-4):
     measured_raw: list of (direction (3,) unit Cartesian vector, eps_absolute
         (3,3)) pairs, one per VASP calculation actually run for this atom --
         i.e. raw absolute dielectric tensors, NOT yet finite-differenced.
-        Directions must be axis-aligned (see generate_minimal_displacements.py).
+        Directions must be axis-aligned.
     site_symmetry_cart: this atom's site-symmetry rotations, Cartesian.
 
     Returns D_full (3,3,3): the atom's complete dielectric-derivative tensor,

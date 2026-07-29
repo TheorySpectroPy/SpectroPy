@@ -26,7 +26,7 @@ python -m pip install '.[plot]'
 Return to this tutorial directory before running the commands below:
 
 ```bash
-cd MoS2_Tutorial
+cd examples/MoS2_Tutorial
 ```
 
 ## Included files
@@ -65,7 +65,7 @@ commands create:
 The broadened numerical file is two columns: Raman shift in cm⁻¹ and
 unnormalized broadened intensity. The PNG is normalized for display.
 
-![Reference Raman spectrum](../docs/images/Raman_plot_MoS2.png)
+![Reference Raman spectrum](../../docs/images/Raman_plot_MoS2.png)
 
 ## Understanding `input`
 
@@ -117,10 +117,8 @@ spectropy displacements --mode atoms
 spectropy displacements --mode minimal
 ```
 
-The `full` and `atoms` modes write `atomic_displacement`,
-`displacements.dat`, `pos_atom*`, and `ra_pos_atom*/POSCAR`. The `minimal`
-mode writes compatible displacement bookkeeping and `ra_pos_atom*/POSCAR`
-directories directly.
+Every mode writes `atomic_displacement`, `displacements.dat`, `pos_atom*`,
+and `ra_pos_atom*/POSCAR`.
 
 SpectroPy does not create `INCAR`, `KPOINTS`, `POTCAR`, job scripts, or VASP
 commands. Copy or generate the input files appropriate for your DFT code in

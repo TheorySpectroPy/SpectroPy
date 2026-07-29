@@ -25,12 +25,6 @@ def _commands(mode: str) -> dict[str, tuple[str, Callable[[], None]]]:
             getattr(importlib.import_module(module), function)()
         return run
 
-    def stages(*stage_specs: tuple[str, str]) -> Callable[[], None]:
-        def run() -> None:
-            for module, function in stage_specs:
-                getattr(importlib.import_module(module), function)()
-        return run
-
     def derivatives() -> None:
         getattr(importlib.import_module("process_symmetry"), "run_mapping")()
         getattr(
@@ -41,34 +35,19 @@ def _commands(mode: str) -> dict[str, tuple[str, Callable[[], None]]]:
     def spectrum() -> None:
         getattr(importlib.import_module("calculate_spectrum"), "run_raman_tensors_for_input")()
 
-    # Displacement amplitude is read from "input"'s displacement_amplitude
-    # line by each generator itself (see read_displacement_amplitude in
-    # process_symmetry.py) -- not a CLI flag, so it lives in the same
-    # non-interactive settings file as laser_energies/broadening_*.
-    if mode == "full":
-        prepare = stages(
-            ("create_displacements", "run_displacements"),
-            ("prepare_vasp_inputs", "run_generate_displacements"),
-        )
-        prepare_description = (
-            "Generate the full +/- Cartesian displacement set and VASP-ready directories."
-        )
-    elif mode == "atoms":
-        prepare = stages(
-            ("generate_atom_displacements", "run_generate_atoms"),
-            ("prepare_vasp_inputs", "run_generate_displacements"),
-        )
-        prepare_description = (
-            "Generate all +/- Cartesian displacements for symmetry-inequivalent atoms."
-        )
-    else:
-        prepare = stage("generate_minimal_displacements", "run_generate")
-        prepare_description = "Generate Phonopy symmetry-reduced displaced POSCAR directories."
+    def displacements() -> None:
+        getattr(importlib.import_module("spectropy_displacements"), "run_displacements")(mode)
+
+    descriptions = {
+        "full": "Generate the full +/- Cartesian displacement set and VASP-ready directories.",
+        "atoms": "Generate all +/- Cartesian displacements for symmetry-inequivalent atoms.",
+        "minimal": "Generate Phonopy symmetry-reduced displaced POSCAR directories.",
+    }
 
     return {
         "displacements": (
-            prepare_description,
-            prepare,
+            descriptions[mode],
+            displacements,
         ),
         "derivatives": (
             "Process symmetry and evaluate derivatives at every laser energy in input.",

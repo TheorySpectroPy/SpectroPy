@@ -1,93 +1,25 @@
 import numpy as np
 import os
 import sys
-import yaml
 import re
+from spectropy_structure import read_structure
+from spectropy_phonons import read_gamma_modes
 
 def read_contcar(filepath="CONTCAR"):
-    """Reads a VASP CONTCAR file to get structure information."""
-    print(f"Reading structure data from {filepath}...")
-    with open(filepath, 'r') as f:
-        lines = f.readlines()
-
-    comment = lines[0].strip()
-    lattice_vectors = np.array([list(map(float, line.split())) for line in lines[2:5]])
-    
-    try:
-        atom_counts = np.array(lines[6].split(), dtype=int)
-        atom_symbols = lines[5].split()
-        header = lines[:8]
-        pos_start_idx = 8
-    except (ValueError, IndexError):
-        atom_counts = np.array(lines[5].split(), dtype=int)
-        atom_symbols = [f"El{i+1}" for i in range(len(atom_counts))]
-        header = lines[:7]
-        pos_start_idx = 7
-    
-    total_atoms = sum(atom_counts)
-    
-    positions_lines = [lines[i] for i in range(pos_start_idx, pos_start_idx + total_atoms)]
-    positions = np.array([list(map(float, line.split()[:3])) for line in positions_lines])
-
-    # Check if coordinates are Cartesian or Direct
-    if lines[pos_start_idx - 1].strip().lower().startswith('c'):
-        positions_cart = positions
-        positions_frac = positions @ np.linalg.inv(lattice_vectors)
-    else: # Assume Direct (fractional)
-        positions_frac = positions
-        positions_cart = positions_frac @ lattice_vectors
-
-    # Build a full list of atom symbols
-    atom_symbols_full = []
-    for sym, count in zip(atom_symbols, atom_counts):
-        atom_symbols_full.extend([sym] * count)
-
+    structure = read_structure(filepath)
     return {
-        "lattice_vectors": lattice_vectors,
-        "atom_symbols": atom_symbols,
-        "atom_symbols_full": atom_symbols_full,
-        "atom_counts": atom_counts,
-        "total_atoms": total_atoms,
-        "positions_cart": positions_cart,
-        "positions_frac": positions_frac,
-        "header_lines": header
+        "lattice_vectors": structure.lattice,
+        "atom_symbols": list(structure.symbols),
+        "atom_symbols_full": structure.atom_symbols,
+        "atom_counts": structure.counts,
+        "total_atoms": structure.natoms,
+        "positions_cart": structure.cartesian_positions,
+        "positions_frac": structure.fractional_positions,
     }
 
 def read_band_yaml(filepath="band.yaml"):
-    """Parses a Phonopy band.yaml file to get phonon modes."""
-    print(f"Reading phonon modes from {filepath}...")
-    try:
-        with open(filepath, 'r') as f:
-            data = yaml.safe_load(f)
-    except FileNotFoundError:
-        print(f"Error: '{filepath}' not found.")
-        sys.exit(1)
-    except Exception as e:
-        print(f"Error parsing YAML file: {e}")
-        sys.exit(1)
-    
-    try:
-        n_atoms = data['natom']
-        phonons = data['phonon'][0]['band']
-        n_modes = len(phonons)
-        masses = np.array([atom['mass'] for atom in data['points']])
-        
-        frequencies = np.array([p['frequency'] for p in phonons])
-        eigenvectors_raw = np.array([p['eigenvector'] for p in phonons])
-        
-        eigenvectors = eigenvectors_raw[..., 0].reshape(n_modes, n_modes)
-        
-        masses_expanded = np.repeat(masses, 3)
-        eigendisplacements = eigenvectors / np.sqrt(masses_expanded)
-        eigendisplacements = eigendisplacements.reshape(n_modes, n_atoms, 3)
-        
-        return frequencies, eigendisplacements, masses, n_atoms
-    except KeyError as e:
-        print(f"Error: Missing key {e} in band.yaml. The file structure may be different.")
-        sys.exit(1)
-    except Exception as e:
-        print(f"An error occurred reading band.yaml: {e}")
-        sys.exit(1)
+    modes = read_gamma_modes(filepath)
+    return modes.frequencies_thz, modes.eigendisplacements, modes.masses, modes.natoms
 
 
 def write_vmd_script(filename, positions, displacements, l_cylinder, l_cone):

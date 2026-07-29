@@ -33,16 +33,17 @@ dev = ["pytest>=7"]
 spectropy = "spectropy_cli:main"
 
 [tool.setuptools]
+package-dir = {"" = "src"}
 py-modules = [
     "calculate_dielectric_derivatives",
     "calculate_spectrum",
-    "create_displacements",
-    "generate_minimal_displacements",
-    "generate_atom_displacements",
     "generate_raman_plots",
-    "prepare_vasp_inputs",
     "process_symmetry",
     "reconstruct_dielectric_derivatives",
     "spectropy_cli",
+    "spectropy_config",
+    "spectropy_displacements",
+    "spectropy_phonons",
+    "spectropy_structure",
     "visualize_modes",
 ]
