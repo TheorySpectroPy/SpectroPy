@@ -1,0 +1,8 @@
+1.0 0.0 0.0                 ! incident polarization
+1.0 0.0 0.0                 ! scattered polarization
+z                           ! surface normal
+laser_energies: 1.96        ! eV
+displacement_amplitude: 0.03 ! Angstrom
+polarization: average       ! write orientation-averaged intensity too
+broadening_fwhm: 1.0        ! cm-1
+broadening_type: lorentzian

@@ -7,7 +7,7 @@ from string import ascii_lowercase
 from phonopy import Phonopy
 from phonopy.interface.vasp import read_vasp, write_vasp
 
-from process_symmetry import read_contcar
+from process_symmetry import read_contcar, read_displacement_amplitude
 
 
 def build_phonopy(contcar_path="CONTCAR", amplitude=0.03):
@@ -23,8 +23,13 @@ def build_phonopy(contcar_path="CONTCAR", amplitude=0.03):
     return ph
 
 
-def run_generate(contcar_path="CONTCAR", amplitude=0.03, template_dir=None):
+def run_generate(contcar_path="CONTCAR", amplitude=None, template_dir=None):
     """
+    amplitude: Cartesian displacement magnitude in Angstrom. If None (the
+        CLI's `spectropy displacements` never passes one), read from
+        "input"'s displacement_amplitude line, defaulting to 0.03 if that's
+        absent too.
+
     Phonopy-driven replacement for raman_dis/raman_dis_nosym: generates only
     the symmetry-independent atoms x symmetry-independent Cartesian
     directions actually needed (via Phonopy.generate_displacements, i.e.
@@ -41,6 +46,8 @@ def run_generate(contcar_path="CONTCAR", amplitude=0.03, template_dir=None):
     calculate_dielectric_derivatives.py already expects (extended to support
     a variable number of displacements per atom, not a fixed 6).
     """
+    if amplitude is None:
+        amplitude = read_displacement_amplitude(default=0.03)
     if not os.path.exists(contcar_path):
         print(f"***** {contcar_path} not found *****")
         sys.exit(1)
@@ -128,7 +135,7 @@ if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--contcar", default="CONTCAR")
-    ap.add_argument("--amplitude", type=float, default=0.03)
+    ap.add_argument("--amplitude", type=float, default=None)
     ap.add_argument("--template-dir", default=None,
                      help="directory to copy INCAR/KPOINTS/POTCAR from into each raman_poscar_* dir")
     args = ap.parse_args()

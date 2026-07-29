@@ -1,7 +1,38 @@
 import numpy as np
 import os
+import re
 import sys
 import yaml
+
+
+def read_displacement_amplitude(input_path="input", default=0.01):
+    """
+    Read ``displacement_amplitude`` from ``input`` (the same non-interactive
+    settings file laser_energies/broadening_fwhm/broadening_type already live
+    in -- see calculate_dielectric_derivatives.read_laser_energies and
+    generate_raman_plots.read_broadening_settings for the same pattern).
+
+    Cartesian displacement magnitude in Angstrom. Falls back to `default`
+    (each displacement generator's own prior hardcoded value) if `input`
+    doesn't exist or doesn't set this key, so existing calculation
+    directories without an `input` file keep working unchanged.
+    """
+    if not os.path.exists(input_path):
+        return default
+    with open(input_path) as handle:
+        for raw_line in handle:
+            line = raw_line.split("!", 1)[0].split("#", 1)[0].strip()
+            match = re.match(r"^displacement_amplitude\s*(?::|=|\s)\s*(.+)$", line, re.I)
+            if match:
+                try:
+                    amplitude = float(match.group(1).split()[0])
+                except (ValueError, IndexError) as error:
+                    raise ValueError(f"Invalid displacement_amplitude line: {raw_line.rstrip()}") from error
+                if amplitude <= 0:
+                    raise ValueError("displacement_amplitude must be positive")
+                return amplitude
+    return default
+
 
 def read_contcar(filepath="CONTCAR"):
     """Reads a VASP CONTCAR file to get atomic positions."""

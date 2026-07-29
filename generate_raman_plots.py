@@ -29,6 +29,35 @@ def lorentzian(x, center, amplitude, fwhm):
     hwhm = fwhm / 2.0
     return amplitude * (hwhm**2) / ((x - center)**2 + hwhm**2)
 
+
+def broaden_spectrum(freqs, intensities, fwhm, b_type):
+    """Return an unnormalized broadened spectrum on the plotting grid."""
+    x_dense = np.linspace(max(0, min(freqs) - 50), max(freqs) + 50, 2000)
+    y_dense = np.zeros_like(x_dense)
+    profile = gaussian if b_type == 'g' else lorentzian
+    for frequency, intensity in zip(freqs, intensities):
+        y_dense += profile(x_dense, frequency, intensity, fwhm)
+    return x_dense, y_dense
+
+
+def write_broadened_spectrum(input_file, fwhm, b_type):
+    """Write the Raman-workflow-compatible numerical broadening output."""
+    raw_data = np.loadtxt(input_file, dtype=float)
+    if raw_data.size == 0:
+        return None
+    if raw_data.ndim == 1:
+        raw_data = raw_data.reshape(1, -1)
+    x_dense, y_dense = broaden_spectrum(raw_data[:, 0], raw_data[:, 1], fwhm, b_type)
+
+    basename = os.path.basename(input_file)
+    energy = basename.removeprefix("Raman_intensity_complex_")
+    output_path = os.path.join(
+        os.path.dirname(input_file), f"Raman_intensity_complex_broadening_{energy}"
+    )
+    np.savetxt(output_path, np.column_stack((x_dense, y_dense)), fmt="%12.6f %18.8e")
+    print(f"   -> Created {output_path}")
+    return output_path
+
 def format_mode_for_latex(mode_str):
     r"""
     Robust formatter. Handles subscripts and primes better.
@@ -53,6 +82,37 @@ def format_mode_for_latex(mode_str):
     # Fallback
     return f'${mode_str}$'
 
+
+def read_broadening_settings(input_path="input"):
+    """Read plot broadening settings from ``input``.
+
+    ``broadening_fwhm`` is in cm^-1 and defaults to 1.0.  ``broadening_type``
+    accepts ``lorentzian``/``l`` (the default) or ``gaussian``/``g``.
+    """
+    fwhm = 1.0
+    broadening_type = "l"
+    if not os.path.isfile(input_path):
+        return fwhm, broadening_type
+
+    with open(input_path) as handle:
+        for raw_line in handle:
+            line = raw_line.split("!", 1)[0].split("#", 1)[0].strip()
+            match = re.match(r"^broadening_fwhm\s*(?::|=|\s)\s*(.+)$", line, re.I)
+            if match:
+                try:
+                    fwhm = float(match.group(1).split()[0])
+                except ValueError as error:
+                    raise ValueError(f"Invalid broadening_fwhm line: {raw_line.rstrip()}") from error
+                if fwhm <= 0:
+                    raise ValueError("broadening_fwhm must be positive")
+            match = re.match(r"^broadening_type\s*(?::|=|\s)\s*(.+)$", line, re.I)
+            if match:
+                value = match.group(1).strip().lower()
+                broadening_type = {"lorentzian": "l", "l": "l", "gaussian": "g", "g": "g"}.get(value, "")
+                if not broadening_type:
+                    raise ValueError("broadening_type must be lorentzian or gaussian")
+    return fwhm, broadening_type
+
 # --- 3. The Plotting Core ---
 
 def process_and_plot(input_file, fwhm=5.0, b_type='l'):
@@ -73,16 +133,9 @@ def process_and_plot(input_file, fwhm=5.0, b_type='l'):
         print(f"      Error reading {os.path.basename(input_file)}: {e}")
         return
 
-    # Generate Broadened Curve
-    # Create x-axis with buffer
-    x_dense = np.linspace(max(0, min(freqs)-50), max(freqs)+50, 2000)
-    y_dense = np.zeros_like(x_dense)
-    
-    for f, i in zip(freqs, intensities):
-        if b_type == 'g':
-            y_dense += gaussian(x_dense, f, i, fwhm)
-        else:
-            y_dense += lorentzian(x_dense, f, i, fwhm)
+    # Generate the same unnormalized curve that is written for the raw
+    # polarization-specific spectrum below, then normalize only the plot.
+    x_dense, y_dense = broaden_spectrum(freqs, intensities, fwhm, b_type)
 
     # Normalize
     if np.max(y_dense) > 0:
@@ -151,29 +204,40 @@ def run_automation():
     print(f"--- Automated Raman Plotter (Style: Publication) ---")
     print(f"Scanning: {base_path}")
     
-    # Inputs
-    val_fwhm = input("Enter FWHM (cm-1) [default 5.0]: ")
-    fwhm = float(val_fwhm) if val_fwhm else 5.0
-    
-    val_type = input("Broadening [L]orentzian or [G]aussian [default L]: ").lower()
-    b_type = val_type if val_type in ['l', 'g'] else 'l'
+    fwhm, b_type = read_broadening_settings()
+    print(f"Broadening: {'Lorentzian' if b_type == 'l' else 'Gaussian'}, FWHM = {fwhm:g} cm-1")
 
     count = 0
+    broadened_count = 0
     # Walk Directory -- raman_tensor names its per-energy output
-    # Raman_intensity_polarization_averaged_<eV>eV / Raman_intensity_complex_<eV>eV
-    # (no fixed "Raman_intensity_specific.dat" name as in the old binary).
-    # Plot the polarization-averaged variant: it's the one directly comparable
-    # to an experimental (unpolarized) Raman spectrum.
-    target_re = re.compile(r"^Raman_intensity_polarization_averaged_.+eV$")
+    # Raman_intensity_complex_<eV>eV (the specific incident/scattered
+    # geometry from input, always written) and, only when "polarization:
+    # average" was requested (see calculate_spectrum.read_polarization_mode),
+    # Raman_intensity_polarization_averaged_<eV>eV too. Plot whichever of the
+    # two actually exists for a given energy -- average is only present when
+    # explicitly asked for, so this never silently substitutes one for the
+    # other.
+    avg_re = re.compile(r"^Raman_intensity_polarization_averaged_.+eV$")
+    raw_complex_re = re.compile(r"^Raman_intensity_complex_(?!broadening_).+eV$")
     for root, dirs, files in os.walk(base_path):
         for fname in files:
-            if target_re.match(fname):
+            if raw_complex_re.match(fname):
+                full_path = os.path.join(root, fname)
+                try:
+                    write_broadened_spectrum(full_path, fwhm, b_type)
+                    broadened_count += 1
+                except Exception as error:
+                    print(f"      Error broadening {fname}: {error}")
+                print(f"Processing: {os.path.join(os.path.basename(root), fname)}")
+                process_and_plot(full_path, fwhm, b_type)
+                count += 1
+            if avg_re.match(fname):
                 full_path = os.path.join(root, fname)
                 print(f"Processing: {os.path.join(os.path.basename(root), fname)}")
                 process_and_plot(full_path, fwhm, b_type)
                 count += 1
 
-    print(f"\nSuccess! Generated {count} plots.")
+    print(f"\nSuccess! Generated {count} plots and {broadened_count} numerical broadened spectra.")
 
 if __name__ == "__main__":
     run_automation()

@@ -6,11 +6,6 @@ structures, uses Phonopy symmetry information to reduce and reconstruct the
 required dielectric-tensor derivatives, and combines those derivatives with
 phonon eigenvectors to produce Raman tensors, intensities, and broadened plots.
 
-SpectroPy does **not** run VASP, Quantum ESPRESSO, or another DFT engine. You
-run the displaced-structure calculations with your own DFT settings, scheduler,
-and convergence parameters; SpectroPy handles the preparation and analysis.
-VASP is the currently implemented output reader. Quantum ESPRESSO support is a
-future goal.
 
 ![Example Raman spectrum plot](docs/images/Raman_plot_MoS2.png)
 
@@ -60,7 +55,12 @@ uses `0.00 eV`, the static-limit calculation.
 1.0 0.0 0.0
 z
 laser_energies: 0.00 1.96 2.33
+broadening_fwhm: 1.0
+broadening_type: lorentzian
 ```
+
+`broadening_fwhm` is in cm⁻¹ and defaults to `1.0`; `broadening_type`
+defaults to `lorentzian` and may instead be `gaussian`.
 
 ## Command-line interface
 
@@ -69,6 +69,7 @@ directory. Use `--workdir` (or `-C`) to run a stage elsewhere.
 
 ```bash
 spectropy --help
+spectropy displacements --help
 spectropy displacements --mode minimal --workdir /path/to/calculation
 ```
 
@@ -122,10 +123,9 @@ spectropy displacements --mode minimal
 
 The full mode writes `ref_poscar.vasp`, `displacements.dat`, and the
 pipeline-compatible `atomic_displacement`, creates
-`pos_atom*` files and `ra_pos_atom*` directories with `POSCAR`, and provides
-helper scripts `setup_vasp_calcs.sh` and `collect_results.sh`. It links
-`INCAR`, `KPOINTS`, and `POTCAR` from the calculation directory into each
-displacement directory.
+`pos_atom*` files and `ra_pos_atom*` directories with `POSCAR`. SpectroPy
+does not link or create DFT input files; add the inputs required by your own
+DFT code to each directory.
 
 The minimal-displacement route directly creates `ra_pos_atom*` directories,
 each containing a displaced `POSCAR`, and writes compatible
@@ -186,6 +186,8 @@ To predefine the geometry and laser energies, create `input` as follows:
 0.0 1.0 0.0   ! scattered-light polarization
 z             ! surface-normal direction
 laser_energies: 0.00 1.96 2.33 ! eV; 0.00 is the static-limit calculation
+broadening_fwhm: 1.0 ! cm-1
+broadening_type: lorentzian
 ```
 
 ### 6. Broaden and plot results
@@ -194,11 +196,14 @@ laser_energies: 0.00 1.96 2.33 ! eV; 0.00 is the static-limit calculation
 spectropy plot
 ```
 
-The plotter prompts for a full width at half maximum and for Lorentzian or
-Gaussian broadening. It scans the current directory tree for Raman intensity
-files and writes publication-style PNG plots alongside them. If LaTeX is
-installed it is used for rendering; otherwise Matplotlib's standard fonts are
-used.
+The plotter reads `broadening_fwhm` (default `1.0 cm⁻¹`) and
+`broadening_type` (`lorentzian` by default, or `gaussian`) from `input`. It
+scans the current directory tree for Raman intensity files and writes
+publication-style PNG plots alongside them. It also writes unnormalized,
+two-column numerical spectra named
+`Raman_intensity_complex_broadening_<energy>eV`, matching the Raman-workflow
+file convention. If LaTeX is installed it is used for rendering; otherwise
+Matplotlib's standard fonts are used.
 
 ## Phonon-mode visualization
 

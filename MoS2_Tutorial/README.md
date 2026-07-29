@@ -1,74 +1,153 @@
 # Tutorial: Monolayer MoS₂ Raman Spectrum
 
-This folder contains a complete set of input files and pre-calculated intermediate data for simulating the Raman spectrum of **Monolayer MoS₂**.
+This directory is a small SpectroPy example for monolayer MoS₂. It includes a
+relaxed structure, Gamma-point Phonopy bands, and a precomputed
+frequency-dependent dielectric-derivative file at 1.96 eV. You can therefore
+run the spectrum and plotting stages without VASP.
 
-You can use this tutorial to verify that your installation is working correctly and to familiarize yourself with the workflow.
+The example is useful for checking your installation and for seeing the
+expected file and command conventions. It is not a substitute for converging a
+new calculation's DFT and phonon settings.
 
-## Included Files
+## Prerequisites
 
-We have provided the essential files, so you can skip the VASP steps:
-
-### Inputs
-
-- `CONTCAR`, `INCAR`, `KPOINTS`: Standard VASP inputs for the simulation.
-- `band.yaml`: Phonon modes calculated by Phonopy.
-
-### Pre-Calculated Data
-
-- `dielectric_derivatives_1.96.dat`: The Raman tensors calculated from VASP (so you don't have to run the supercomputer jobs).
-
-## Running the Tutorial
-
-### Step 1: Generate Displacements
-
-First, test the setup script to see how it handles the structure.
-
-Run from this directory:
+Install SpectroPy from the repository root:
 
 ```bash
-python ../../create_displacements.py
+python -m pip install .
 ```
 
-**Expected Output:**  
-A new file `displacements.dat` will appear, listing the required atomic movements.
-
----
-
-### Step 2: Calculate the Spectrum
-
-Since we already provided the `dielectric_derivatives_1.96.dat` file, you can skip the VASP calculations and go straight to the physics analysis.
+For plotting, install the optional plotting dependency:
 
 ```bash
-python ../../calculate_spectrum.py
+python -m pip install '.[plot]'
 ```
 
-**Prompts to answer:**
-
-- **Laser Energy:** Enter `1.96` (to match the provided data file).
-- **Geometry:** You can choose specific geometries (like z direction), or just press Enter for defaults.
-
-**Expected Output:**  
-The script will combine the provided derivatives with the `band.yaml` info to create:
-
-- `Raman_intensity_specific.dat`
-- `Raman_intensity_averaged.dat`
-
----
-
-### Step 3: Visualize the Result
-
-Now, generate the publication-quality plot.
+Return to this tutorial directory before running the commands below:
 
 ```bash
-python ../../generate_raman_plots.py
+cd MoS2_Tutorial
 ```
 
-**Prompts to answer:**
+## Included files
 
-- **FWHM:** Press Enter (default `5.0`).
-- **Broadening:** Press Enter (default `Lorentzian`).
+- `CONTCAR`, `INCAR`, and `KPOINTS`: VASP structure and example input files.
+- `band.yaml`: Gamma-point phonon modes from Phonopy.
+- `dielectric_derivatives_1.96`: precomputed SpectroPy dielectric derivatives
+  at a 1.96 eV laser energy, retained under its historical filename.
+- `input`: non-interactive geometry, laser-energy, displacement, polarization,
+  and broadening settings used by the tutorial.
+- `Raman_plot_styled.png`: a reference image from the earlier workflow.
 
-**Final Result:**  
-A file named `Raman_plot_styled.png` will be generated. It should look identical to the reference image.
+The current command-line workflow names derivative files
+`epsilon_derivative_<energy>`. The quick start below makes a working copy of
+the bundled historical file; it does not alter the reference file.
 
-![Example Raman Spectrum Plot](../docs/images/Raman_plot_MoS2.png)
+## Quick start: spectrum from the bundled data
+
+```bash
+cp dielectric_derivatives_1.96 epsilon_derivative_1.96
+spectropy spectrum
+spectropy plot
+```
+
+`input` selects a 1.96 eV laser, parallel in-plane incident/scattered
+polarizations, polarization averaging, and a 1.0 cm⁻¹ Lorentzian width. The
+commands create:
+
+- `Raman_tensor`
+- `Raman_intensity_complex_1.96eV`
+- `Raman_intensity_polarization_averaged_1.96eV`
+- `Raman_intensity_complex_broadening_1.96eV`
+- `Raman_plot_styled_Raman_intensity_complex_1.96eV.png`
+- `Raman_plot_styled_Raman_intensity_polarization_averaged_1.96eV.png`
+
+The broadened numerical file is two columns: Raman shift in cm⁻¹ and
+unnormalized broadened intensity. The PNG is normalized for display.
+
+![Reference Raman spectrum](../docs/images/Raman_plot_MoS2.png)
+
+## Understanding `input`
+
+The first three lines specify the scattering geometry. Named settings make the
+calculation reproducible:
+
+```text
+1.0 0.0 0.0                 ! incident polarization
+1.0 0.0 0.0                 ! scattered polarization
+z                           ! surface normal
+laser_energies: 1.96        ! eV
+displacement_amplitude: 0.03 ! Angstrom
+polarization: average       ! write orientation-averaged intensity too
+broadening_fwhm: 1.0        ! cm-1
+broadening_type: lorentzian
+```
+
+`laser_energies` may contain multiple space-separated values. Omitting it
+uses `0.00 eV`, the static-limit case. `displacement_amplitude` is read by all
+three displacement modes; when it is absent, `full` and `atoms` use 0.01 Å,
+while `minimal` uses 0.03 Å.
+
+## Full calculation workflow
+
+Use these steps for a new material, after preparing a relaxed `CONTCAR` and a
+Gamma-point Phonopy calculation.
+
+### 1. Create a Phonopy symmetry file
+
+The derivative stage requires Phonopy's YAML symmetry output:
+
+```bash
+phonopy --symmetry -c CONTCAR > symmetry
+```
+
+### 2. Generate displaced structures
+
+Choose one displacement strategy:
+
+```bash
+# Six +/- Cartesian displacements for every atom.
+spectropy displacements --mode full
+
+# Six +/- Cartesian displacements for one representative of each
+# symmetry-equivalent atom set.
+spectropy displacements --mode atoms
+
+# Phonopy's smallest site-symmetry-reduced displacement set.
+spectropy displacements --mode minimal
+```
+
+The `full` and `atoms` modes write `atomic_displacement`,
+`displacements.dat`, `pos_atom*`, and `ra_pos_atom*/POSCAR`. The `minimal`
+mode writes compatible displacement bookkeeping and `ra_pos_atom*/POSCAR`
+directories directly.
+
+SpectroPy does not create `INCAR`, `KPOINTS`, `POTCAR`, job scripts, or VASP
+commands. Copy or generate the input files appropriate for your DFT code in
+each `ra_pos_atom*` directory, then run the calculations yourself.
+
+### 3. Evaluate dielectric derivatives
+
+Each completed VASP directory must contain `vasprun.xml` with dielectric data.
+Then run:
+
+```bash
+spectropy derivatives
+```
+
+For every value in `laser_energies`, this writes:
+
+- `dielectric_tensor_<energy>`: the dielectric tensor data from every
+  displacement.
+- `epsilon_derivative_<energy>`: the assembled complex dielectric derivatives
+  used by the spectrum stage.
+
+### 4. Calculate and plot the spectrum
+
+```bash
+spectropy spectrum
+spectropy plot
+```
+
+Use `spectropy --help` or `spectropy displacements --help` to see the current
+CLI options.
