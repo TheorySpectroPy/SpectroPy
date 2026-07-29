@@ -18,33 +18,50 @@ def _run_in_directory(workdir: str, operation: Callable[[], None]) -> None:
         os.chdir(previous)
 
 
-def _commands() -> dict[str, tuple[str, Callable[[], None]]]:
+def _commands(mode: str) -> dict[str, tuple[str, Callable[[], None]]]:
     """Return the available CLI stages without importing their dependencies."""
     def stage(module: str, function: str) -> Callable[[], None]:
         def run() -> None:
             getattr(importlib.import_module(module), function)()
         return run
 
+    def stages(*stage_specs: tuple[str, str]) -> Callable[[], None]:
+        def run() -> None:
+            for module, function in stage_specs:
+                getattr(importlib.import_module(module), function)()
+        return run
+
+    if mode == "full":
+        prepare = stages(
+            ("create_displacements", "run_displacements"),
+            ("prepare_vasp_inputs", "run_generate_displacements"),
+        )
+        prepare_description = (
+            "Generate the full +/- Cartesian displacement set and VASP-ready directories."
+        )
+    elif mode == "atoms":
+        prepare = stages(
+            ("generate_atom_displacements", "run_generate_atoms"),
+            ("prepare_vasp_inputs", "run_generate_displacements"),
+        )
+        prepare_description = (
+            "Generate all +/- Cartesian displacements for symmetry-inequivalent atoms."
+        )
+    else:
+        prepare = stage("generate_minimal_displacements", "run_generate")
+        prepare_description = "Generate Phonopy symmetry-reduced displaced POSCAR directories."
+
     return {
         "displacements": (
-            "Create the legacy +/- Cartesian displacement list from CONTCAR.",
-            stage("create_displacements", "run_displacements"),
-        ),
-        "prepare-inputs": (
-            "Create displaced POSCAR directories from displacements.dat.",
-            stage("prepare_vasp_inputs", "run_generate_displacements"),
-        ),
-        "minimal-displacements": (
-            "Create phonopy symmetry-reduced displaced POSCAR directories.",
-            stage("generate_minimal_displacements", "run_generate"),
-        ),
-        "symmetry": (
-            "Process phonopy's symmetry file into atom mapping matrices.",
-            stage("process_symmetry", "run_mapping"),
+            prepare_description,
+            prepare,
         ),
         "derivatives": (
-            "Read dielectric outputs and write frequency-dependent derivatives.",
-            stage("calculate_dielectric_derivatives", "run_generate_derivatives"),
+            "Process Phonopy symmetry and write frequency-dependent dielectric derivatives.",
+            stages(
+                ("process_symmetry", "run_mapping"),
+                ("calculate_dielectric_derivatives", "run_generate_derivatives"),
+            ),
         ),
         "static-derivatives": (
             "Read static dielectric outputs and write static derivatives.",
@@ -74,10 +91,14 @@ def main(argv: list[str] | None = None) -> int:
         "--workdir", "-C", default=".", metavar="PATH",
         help="Directory containing the stage's input files (default: current directory).",
     )
+    parser.add_argument(
+        "--mode", choices=("full", "atoms", "minimal"), default="full",
+        help="Displacement strategy for `displacements` (default: full).",
+    )
     parser.add_argument("--version", action="version", version="spectropy 0.1.0")
     args = parser.parse_args(argv)
 
-    commands = _commands()
+    commands = _commands(args.mode)
     if args.command is None:
         parser.print_help()
         print("\nCommands:")
