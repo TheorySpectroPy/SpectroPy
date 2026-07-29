@@ -41,6 +41,10 @@ def _commands(mode: str) -> dict[str, tuple[str, Callable[[], None]]]:
     def spectrum() -> None:
         getattr(importlib.import_module("calculate_spectrum"), "run_raman_tensors_for_input")()
 
+    # Displacement amplitude is read from "input"'s displacement_amplitude
+    # line by each generator itself (see read_displacement_amplitude in
+    # process_symmetry.py) -- not a CLI flag, so it lives in the same
+    # non-interactive settings file as laser_energies/broadening_*.
     if mode == "full":
         prepare = stages(
             ("create_displacements", "run_displacements"),
@@ -89,30 +93,44 @@ def main(argv: list[str] | None = None) -> int:
             "dielectric-tensor results. DFT calculations are run externally."
         ),
     )
-    parser.add_argument("command", nargs="?", help="SpectroPy stage to run")
-    parser.add_argument(
-        "--workdir", "-C", default=".", metavar="PATH",
-        help="Directory containing the stage's input files (default: current directory).",
-    )
-    parser.add_argument(
-        "--mode", choices=("full", "atoms", "minimal"), default="full",
-        help="Displacement strategy for `displacements` (default: full).",
-    )
     parser.add_argument("--version", action="version", version="spectropy 0.1.0")
-    args = parser.parse_args(argv)
+    subparsers = parser.add_subparsers(dest="command", title="commands", metavar="COMMAND")
 
-    commands = _commands(args.mode)
+    def add_workdir(command_parser: argparse.ArgumentParser) -> None:
+        command_parser.add_argument(
+            "--workdir", "-C", default=".", metavar="PATH",
+            help="Directory containing this stage's input files (default: current directory).",
+        )
+
+    displacement_parser = subparsers.add_parser(
+        "displacements",
+        help="Generate displaced structures and DFT-ready directories.",
+        description="Generate displacement structures; this does not run a DFT code.",
+    )
+    add_workdir(displacement_parser)
+    displacement_parser.add_argument(
+        "--mode", choices=("full", "atoms", "minimal"), default="full",
+        help=(
+            "full: all atoms and +/- Cartesian axes; atoms: all axes for "
+            "symmetry-inequivalent atoms; minimal: Phonopy's minimum set."
+        ),
+    )
+    for name, help_text in (
+        ("derivatives", "Process symmetry and calculate dielectric derivatives."),
+        ("spectrum", "Build Raman tensors and intensities from derivatives."),
+        ("plot", "Broaden and plot Raman intensities."),
+    ):
+        command_parser = subparsers.add_parser(name, help=help_text, description=help_text)
+        add_workdir(command_parser)
+
+    args = parser.parse_args(argv)
     if args.command is None:
         parser.print_help()
-        print("\nCommands:")
-        for name, (description, _) in commands.items():
-            print(f"  {name:19} {description}")
         return 0
-    if args.command not in commands:
-        parser.error(f"unknown command {args.command!r}; choose from {', '.join(commands)}")
     if not os.path.isdir(args.workdir):
-        parser.error(f"work directory does not exist: {args.workdir}")
+        subparsers.choices[args.command].error(f"work directory does not exist: {args.workdir}")
 
+    commands = _commands(getattr(args, "mode", "full"))
     _run_in_directory(args.workdir, commands[args.command][1])
     return 0
 

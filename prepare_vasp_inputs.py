@@ -3,12 +3,10 @@ import os
 import sys
 import shutil
 from collections import defaultdict
-import subprocess
 
 def run_generate_displacements():
     """
-    Reads CONTCAR and displacements.dat to generate a series of displaced POSCAR
-    files and a run script (run_vasp_calcs.sh) to manage VASP calculations.
+    Reads CONTCAR and displacements.dat to generate displaced POSCAR directories.
     """
     # --- Check for required input files ---
     if not os.path.exists("CONTCAR"):
@@ -21,7 +19,6 @@ def run_generate_displacements():
     print("Generates all POSCARs for VASP needed to find dielectric tensors.")
     print("Necessary displacements must be given in displacements.dat.")
     print("This program reads CONTCAR.")
-    print("It also generates <run_vasp_calcs.sh> script to set up calculations.")
     
     print("-" * 40)
 
@@ -72,88 +69,46 @@ def run_generate_displacements():
         vector = np.array(list(map(float, parts[2:5])))
         displacements.append({'label': label, 'index': atom_index, 'vector': vector})
 
-    # --- 4. Generate displaced POSCAR files and 'collect_results.sh' script ---
+    # --- 4. Generate displaced POSCAR files and calculation directories ---
     print(f"Generating {num_disps} displaced POSCAR files (poscar*)...")
     
     alphabet = "abcdefghijklmnopqrstuvwxyz"
     # Use a dictionary to count displacements for each atom label (e.g., W1, Te1)
     disp_counter = defaultdict(int)
 
-    with open("collect_results.sh", "w") as f_collect:
-        f_collect.write("#!/bin/bash\n")
-        f_collect.write("#\n")
-        f_collect.write("mkdir -p vasprun\n")
-        f_collect.write("#\n")
+    for disp_data in displacements:
+        label = disp_data['label']
+        atom_idx_1based = disp_data['index']
+        disp_vector = disp_data['vector']
 
-        for disp_data in displacements:
-            label = disp_data['label']
-            atom_idx_1based = disp_data['index']
-            disp_vector = disp_data['vector']
+        # Generate the unique suffix (e.g., 'a', 'b', 'c'...).
+        suffix = alphabet[disp_counter[label]]
+        disp_counter[label] += 1
+        poscar_filename = f"pos_atom{atom_idx_1based}{suffix}"
+        calculation_dir = f"ra_{poscar_filename}"
 
-            # Generate the unique suffix (e.g., 'a', 'b', 'c'...)
-            suffix = alphabet[disp_counter[label]]
-            disp_counter[label] += 1
-            
-            # Match the long-standing Raman workflow convention:
-            # pos_atom1a -> ra_pos_atom1a/POSCAR.
-            poscar_filename = f"pos_atom{atom_idx_1based}{suffix}"
-            
-            # Write the copy command to the collect_results.sh script
-            xml_name = f"{label}{suffix}"
-            f_collect.write(f"cp raman_{poscar_filename}/vasprun.xml vasprun/{xml_name}.xml\n")
+        # Write a standalone POSCAR and put an identical copy in the DFT
+        # directory. No INCAR/KPOINTS/POTCAR links or shell scripts are made:
+        # the user supplies their own DFT inputs and execution method.
+        with open(poscar_filename, "w") as f_pos:
+            f_pos.write(comment)
+            f_pos.write(lattice_constant_line)
+            f_pos.writelines(lattice_vectors_lines)
+            f_pos.write(atom_symbols_line)
+            f_pos.write(" ".join(map(str, atom_counts)) + "\n")
+            f_pos.write(coord_type_line)
 
-            # Create the new displaced POSCAR
-            with open(poscar_filename, "w") as f_pos:
-                f_pos.write(comment)
-                f_pos.write(lattice_constant_line)
-                f_pos.writelines(lattice_vectors_lines)
-                f_pos.write(atom_symbols_line)
-                f_pos.write(" ".join(map(str, atom_counts)) + "\n")
-                f_pos.write(coord_type_line)
+            new_positions = np.copy(original_positions)
+            new_positions[atom_idx_1based - 1] += disp_vector
+            for pos in new_positions:
+                f_pos.write(f"  {pos[0]:.16f} {pos[1]:.16f} {pos[2]:.16f}\n")
 
-                # Create a copy of positions to modify
-                new_positions = np.copy(original_positions)
-                
-                # Apply displacement (convert 1-based index to 0-based)
-                atom_idx_0based = atom_idx_1based - 1
-                new_positions[atom_idx_0based] += disp_vector
-                
-                for pos in new_positions:
-                    f_pos.write(f"  {pos[0]:.16f} {pos[1]:.16f} {pos[2]:.16f}\n")
-
-# --- 5. Generate and Execute the 'setup_vasp_calcs.sh' script ---
-    script_name = "setup_vasp_calcs.sh"
-    print(f"Generating {script_name}...")
-    with open(script_name, "w") as f_run:
-        f_run.write("#!/bin/bash\n")
-        f_run.write("# This script sets up a calculation directory for each displaced POSCAR.\n")
-        f_run.write("# After running this, you will need to run VASP in each 'raman_poscar_*' subdirectory.\n")
-        f_run.write("\n")
-        f_run.write("for d in pos_*; do\n")
-        f_run.write("  folder_name=\"raman_$d\"\n") 
-        f_run.write("  echo \"Setting up directory for $folder_name\"\n")
-        f_run.write("  mkdir -p \"$folder_name\"\n")
-        f_run.write("  cp \"$d\" \"$folder_name/POSCAR\"\n")
-        f_run.write("  ln -sf ../KPOINTS \"$folder_name/KPOINTS\"\n")
-        f_run.write("  ln -sf ../POTCAR \"$folder_name/POTCAR\"\n")
-        f_run.write("  ln -sf ../INCAR \"$folder_name/INCAR\"\n")
-        if os.path.exists("vdw_kernel.bindat"):
-            f_run.write("  ln -sf ../vdw_kernel.bindat \"$folder_name/vdw_kernel.bindat\"\n")
-        f_run.write("done\n")
-        f_run.write("\n")
-        f_run.write("echo \"All calculation directories have been set up.\"\n")
-    
-    # --- Automatically make the script executable and run it ---
-    print(f"Making {script_name} executable...")
-    os.chmod(script_name, 0o755) # 0o755 gives read/write/execute permissions for user -- note why this is needed by reading the script above
-
-    print(f"Executing '{script_name}' to create calculation directories...")
-    # The 'check=True' will cause the script to stop if the bash script fails
-    subprocess.run(["./" + script_name], check=True)
+        os.makedirs(calculation_dir, exist_ok=True)
+        shutil.copyfile(poscar_filename, os.path.join(calculation_dir, "POSCAR"))
         
     print("\nprepare_vasp_inputs.py finished successfully.")
-    print("Generated 'poscar*' files, 'collect_results.sh', and all 'raman_poscar_*' subdirectories.")
-    print("\nNext step: Run your VASP calculations in each subdirectory.")
+    print("Generated 'pos_atom*' files and all 'ra_pos_atom*' directories.")
+    print("\nAdd your DFT inputs and run your calculations in each directory.")
 
 # This makes the script runnable from the command line
 if __name__ == "__main__":

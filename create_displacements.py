@@ -2,14 +2,22 @@ import numpy as np
 import os
 import sys
 
-def run_displacements(contcar_path="CONTCAR"):
+from process_symmetry import read_displacement_amplitude
+
+def run_displacements(contcar_path="CONTCAR", amplitude=None):
     """
     Reads a VASP CONTCAR file and generates the necessary displacement files
     for a Raman calculation.
 
     Args:
         contcar_path (str): The path to the CONTCAR file.
+        amplitude (float): Cartesian displacement magnitude in Angstrom. If
+            None (the CLI's `spectropy displacements` never passes one),
+            read from "input"'s displacement_amplitude line, defaulting to
+            0.01 if that's absent too.
     """
+    if amplitude is None:
+        amplitude = read_displacement_amplitude(default=0.01)
     # Check if CONTCAR exists
     if not os.path.exists(contcar_path):
         print(f"Error: {contcar_path} not found.")
@@ -58,7 +66,7 @@ def run_displacements(contcar_path="CONTCAR"):
         full_atom_symbols.extend([symbol] * count)
 
     # --- 2. Define Cartesian Displacements ---
-    displacement_val = 0.01  # Hardcoded value for now
+    displacement_val = amplitude
     cart_disps = np.array([
         [ displacement_val,  0.0,  0.0],
         [-displacement_val,  0.0,  0.0],
@@ -130,4 +138,11 @@ def run_displacements(contcar_path="CONTCAR"):
     print("Generated ref_poscar.vasp, displacements.dat, and atomic_displacement.")
 
 if __name__ == "__main__":
-    run_displacements()
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--contcar", default="CONTCAR")
+    parser.add_argument("--amplitude", type=float, default=None,
+                         help="Cartesian displacement magnitude in Angstrom "
+                              "(default: input's displacement_amplitude, else 0.01)")
+    args = parser.parse_args()
+    run_displacements(args.contcar, args.amplitude)

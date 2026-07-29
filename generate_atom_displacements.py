@@ -15,6 +15,8 @@ from pathlib import Path
 import numpy as np
 import yaml
 
+from process_symmetry import read_displacement_amplitude
+
 
 def _read_poscar(path: Path) -> tuple[list[str], np.ndarray, np.ndarray, list[str]]:
     """Return symbols, counts, lattice vectors, and coordinate lines."""
@@ -52,9 +54,17 @@ def _representatives(symmetry_path: Path, total_atoms: int) -> list[int]:
 def run_generate_atoms(
     contcar_path: str = "CONTCAR",
     symmetry_path: str = "symmetry",
-    amplitude: float = 0.01,
+    amplitude: float | None = None,
 ) -> None:
-    """Write ``displacements.dat`` for every +/- Cartesian axis of each representative."""
+    """Write ``displacements.dat`` for every +/- Cartesian axis of each representative.
+
+    amplitude: Cartesian displacement magnitude in Angstrom. If None (the
+        CLI's `spectropy displacements` never passes one), read from
+        "input"'s displacement_amplitude line, defaulting to 0.01 if that's
+        absent too.
+    """
+    if amplitude is None:
+        amplitude = read_displacement_amplitude(default=0.01)
     contcar = Path(contcar_path)
     symmetry = Path(symmetry_path)
     if not contcar.is_file():
@@ -126,6 +136,6 @@ if __name__ == "__main__":  # pragma: no cover
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--contcar", default="CONTCAR")
     parser.add_argument("--symmetry", default="symmetry")
-    parser.add_argument("--amplitude", type=float, default=0.01)
+    parser.add_argument("--amplitude", type=float, default=None)
     arguments = parser.parse_args()
     run_generate_atoms(arguments.contcar, arguments.symmetry, arguments.amplitude)

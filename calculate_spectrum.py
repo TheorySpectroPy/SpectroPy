@@ -4,6 +4,36 @@ import sys
 import yaml
 import re
 
+_SETTINGS_KEY_RE = re.compile(
+    r"^(laser_energies?|broadening_fwhm|broadening_type|displacement_amplitude|polarization)\s*(?::|=)",
+    re.I,
+)
+
+
+def read_polarization_mode(input_path="input"):
+    """
+    Read ``polarization`` from ``input``: ``average`` requests the
+    orientation-averaged (powder) intensity in addition to the specific
+    incident/scattered geometry; anything else (the default, "specific")
+    means only the specific-polarization intensity is computed -- averaging
+    is never done unless explicitly asked for.
+    """
+    if not os.path.exists(input_path):
+        return "specific"
+    with open(input_path) as handle:
+        for raw_line in handle:
+            line = raw_line.split("!", 1)[0].split("#", 1)[0].strip()
+            match = re.match(r"^polarization\s*(?::|=)\s*(.+)$", line, re.I)
+            if match:
+                value = match.group(1).strip().lower()
+                if value not in ("average", "specific"):
+                    raise ValueError(
+                        f"polarization must be 'average' or 'specific', got: {raw_line.rstrip()}"
+                    )
+                return value
+    return "specific"
+
+
 def get_user_input():
     """Gets polarization vectors from 'input' file or user prompt."""
     if os.path.exists("input"):
@@ -12,7 +42,7 @@ def get_user_input():
         with open("input") as handle:
             for raw_line in handle:
                 line = raw_line.split("!", 1)[0].split("#", 1)[0].strip()
-                if line and not line.lower().startswith("laser_energies"):
+                if line and not _SETTINGS_KEY_RE.match(line):
                     settings.append(line.split())
         if len(settings) < 3:
             raise ValueError("input needs incident/scattered polarizations and a surface normal")
@@ -27,13 +57,16 @@ def get_user_input():
 
         pol_incident = np.array(pol_incident_str.split(), dtype=float)
         pol_scattered = np.array(pol_scattered_str.split(), dtype=float)
-        
+
         with open("input", "w") as f:
             f.write(f"{pol_incident[0]:4.1f} {pol_incident[1]:4.1f} {pol_incident[2]:4.1f}   ! Incident polarization\n")
             f.write(f"{pol_scattered[0]:4.1f} {pol_scattered[1]:4.1f} {pol_scattered[2]:4.1f}   ! Scattered polarization\n")
             f.write(f"{axis} 0.0 0.0      ! Surface normal\n")
             f.write("laser_energies: 0.00 ! eV\n")
-            
+            f.write("broadening_fwhm: 1.0 ! cm-1\n")
+            f.write("broadening_type: lorentzian\n")
+            f.write("polarization: specific ! 'average' to also compute the orientation-averaged intensity\n")
+
     return pol_incident, pol_scattered, axis
 
 def read_band_yaml(filepath="band.yaml"):
@@ -198,6 +231,7 @@ def run_raman_tensor(dielectric_derivatives_path=None):
 
     # --- Get Inputs ---
     pol_incident, pol_scattered, axis = get_user_input()
+    polarization_mode = read_polarization_mode()
     frequencies, eigendisps, masses, total_atoms = read_band_yaml()
     eps_der_real, eps_der_imag = read_dielectric_derivatives(dielectric_derivatives_path, total_atoms)
     representations = read_irreps()
@@ -218,19 +252,24 @@ def run_raman_tensor(dielectric_derivatives_path=None):
     contracted_tensor = np.einsum('i,mik,k->m', pol_scattered, raman_tensor_cmplx, pol_incident)
     intensities = np.abs(contracted_tensor)**2
 
-    # Polarization-averaged for backscattering
-    if axis == 'z':
-        avg_intensities = (np.abs(raman_tensor_cmplx[:, 0, 0])**2 + np.abs(raman_tensor_cmplx[:, 0, 1])**2 +
-                           np.abs(raman_tensor_cmplx[:, 1, 0])**2 + np.abs(raman_tensor_cmplx[:, 1, 1])**2)
-    elif axis == 'y':
-        # ... similar logic for other axes ...
-        avg_intensities = (np.abs(raman_tensor_cmplx[:, 0, 0])**2 + np.abs(raman_tensor_cmplx[:, 0, 2])**2 +
-                           np.abs(raman_tensor_cmplx[:, 2, 0])**2 + np.abs(raman_tensor_cmplx[:, 2, 2])**2)
-    elif axis == 'x':
-        avg_intensities = (np.abs(raman_tensor_cmplx[:, 1, 1])**2 + np.abs(raman_tensor_cmplx[:, 1, 2])**2 +
-                           np.abs(raman_tensor_cmplx[:, 2, 1])**2 + np.abs(raman_tensor_cmplx[:, 2, 2])**2)
-    else: # Polycrystalline average
-        avg_intensities = np.sum(np.abs(raman_tensor_cmplx)**2, axis=(1, 2))
+    # Polarization-averaged for backscattering -- only computed when
+    # explicitly requested via "polarization: average" in input (see
+    # read_polarization_mode); otherwise only the specific incident/scattered
+    # geometry above is used, and no averaged file is written at all.
+    avg_intensities = None
+    if polarization_mode == "average":
+        if axis == 'z':
+            avg_intensities = (np.abs(raman_tensor_cmplx[:, 0, 0])**2 + np.abs(raman_tensor_cmplx[:, 0, 1])**2 +
+                               np.abs(raman_tensor_cmplx[:, 1, 0])**2 + np.abs(raman_tensor_cmplx[:, 1, 1])**2)
+        elif axis == 'y':
+            # ... similar logic for other axes ...
+            avg_intensities = (np.abs(raman_tensor_cmplx[:, 0, 0])**2 + np.abs(raman_tensor_cmplx[:, 0, 2])**2 +
+                               np.abs(raman_tensor_cmplx[:, 2, 0])**2 + np.abs(raman_tensor_cmplx[:, 2, 2])**2)
+        elif axis == 'x':
+            avg_intensities = (np.abs(raman_tensor_cmplx[:, 1, 1])**2 + np.abs(raman_tensor_cmplx[:, 1, 2])**2 +
+                               np.abs(raman_tensor_cmplx[:, 2, 1])**2 + np.abs(raman_tensor_cmplx[:, 2, 2])**2)
+        else: # Polycrystalline average
+            avg_intensities = np.sum(np.abs(raman_tensor_cmplx)**2, axis=(1, 2))
 
     # Apply temperature correction (Bose-Einstein factor)
     # h*cm-1/k_B*T at 298K
@@ -246,7 +285,8 @@ def run_raman_tensor(dielectric_derivatives_path=None):
     temp_factor[frequencies < 0.03] = 1.0 # Avoid division by zero for acoustic modes
 
     intensities *= temp_factor
-    avg_intensities *= temp_factor
+    if avg_intensities is not None:
+        avg_intensities *= temp_factor
 
     # --- Write Output Files ---
     print("Writing final output files...")
@@ -269,10 +309,11 @@ def run_raman_tensor(dielectric_derivatives_path=None):
     with open(f"Raman_intensity_complex_{energy}eV", "w") as f:
         for i in range(n_modes):
             f.write(f"{freq_cm1[i]:12.3f} {intensities[i]:18.4f}\n")
-    
-    with open(f"Raman_intensity_polarization_averaged_{energy}eV", "w") as f:
-        for i in range(n_modes):
-            f.write(f"{freq_cm1[i]:12.3f} {avg_intensities[i]:18.4f}\n")
+
+    if avg_intensities is not None:
+        with open(f"Raman_intensity_polarization_averaged_{energy}eV", "w") as f:
+            for i in range(n_modes):
+                f.write(f"{freq_cm1[i]:12.3f} {avg_intensities[i]:18.4f}\n")
             
     print("\ncalculate_spectrum.py finished successfully.")
     print(f"Generated Raman_tensor and intensity files for {energy} eV.")
