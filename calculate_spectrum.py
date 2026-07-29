@@ -141,18 +141,25 @@ def read_dielectric_derivatives(filepath, total_atoms):
     eps_der_real_dict = parse_tensor_block(real_start_idx, end_pattern="! The Imaginary Part")
     eps_der_imag_dict = parse_tensor_block(imag_start_idx)
     
-    symmetry_used = len(eps_der_real_dict) < total_atoms
-    
+    # calculate_dielectric_derivatives.py now always writes data for every
+    # atom (symmetry-equivalent atoms not directly displaced are filled in
+    # via reconstruct_dielectric_derivatives.expand_to_equivalent_atoms
+    # before the file is written), so no separate "symmetry was used, full
+    # reconstruction not implemented" fallback path is needed here anymore.
+    missing = [i + 1 for i in range(total_atoms) if (i + 1) not in eps_der_real_dict]
+    if missing:
+        print(f"***** dielectric_derivatives file is missing atom(s) {missing} -- "
+              "was it written by an up-to-date calculate_dielectric_derivatives.py? *****")
+        sys.exit(1)
+
     eps_der_real = np.zeros((total_atoms, 3, 3, 3)) # Shape: (atom, alpha, i, j)
     eps_der_imag = np.zeros((total_atoms, 3, 3, 3))
-    
-    # Populate the main arrays from the parsed dictionaries (1-based index)
-    for i in range(total_atoms):
-        if (i + 1) in eps_der_real_dict:
-            eps_der_real[i] = eps_der_real_dict.get(i + 1, 0)
-            eps_der_imag[i] = eps_der_imag_dict.get(i + 1, 0)
 
-    return eps_der_real, eps_der_imag, symmetry_used
+    for i in range(total_atoms):
+        eps_der_real[i] = eps_der_real_dict[i + 1]
+        eps_der_imag[i] = eps_der_imag_dict[i + 1]
+
+    return eps_der_real, eps_der_imag
 
 def read_irreps(filepath="irreps.yaml"):
     """Reads irreducible representations from Phonopy's irreps.yaml."""
@@ -184,16 +191,10 @@ def run_raman_tensor():
     # --- Get Inputs ---
     pol_incident, pol_scattered, axis = get_user_input()
     frequencies, eigendisps, masses, total_atoms = read_band_yaml()
-    eps_der_real, eps_der_imag, symmetry_used = read_dielectric_derivatives(dielectric_derivatives_path, total_atoms)
+    eps_der_real, eps_der_imag = read_dielectric_derivatives(dielectric_derivatives_path, total_atoms)
     representations = read_irreps()
-    
+
     n_modes = total_atoms * 3
-    if symmetry_used:
-        print("Symmetry was used. Full tensor reconstruction is not yet implemented in this script.")
-        print("Results will only be correct if dielectric_derivatives contains data for all atoms.")
-        # NOTE: A full translation would require parsing 'symmetry_operation_matrices'
-        # and applying the M_inv * T * M transformation, which is complex.
-        # This script proceeds assuming the full tensor is available.
 
     # --- Calculate Mode Raman Tensors ---
     print("Calculating Raman tensors for each mode...")

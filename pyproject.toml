@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spectropy"
+version = "0.1.0"
+description = "Prepare and analyze finite-displacement Raman calculations."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {file = "LICENSE"}
+authors = [{name = "SpectroPy contributors"}]
+dependencies = [
+    "numpy>=1.21",
+    "PyYAML>=6.0",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+
+[project.optional-dependencies]
+plot = ["matplotlib>=3.5"]
+phonopy = ["phonopy>=2.0"]
+all = ["matplotlib>=3.5", "phonopy>=2.0"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+spectropy = "spectropy_cli:main"
+
+[tool.setuptools]
+py-modules = [
+    "calculate_dielectric_derivatives",
+    "calculate_dielectric_derivatives_static",
+    "calculate_spectrum",
+    "create_displacements",
+    "generate_minimal_displacements",
+    "generate_raman_plots",
+    "prepare_vasp_inputs",
+    "process_symmetry",
+    "reconstruct_dielectric_derivatives",
+    "spectropy_cli",
+    "visualize_modes",
+]

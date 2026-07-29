@@ -1,204 +1,227 @@
 # SpectroPy
 
-A Python toolkit for simulating Raman spectra from first-principles calculations. This package automates the setup of the finite displacement method for VASP, post-processes the results to calculate frequency-dependent Raman tensors, and generates plottable spectra for various experimental geometries.
+SpectroPy is a Python toolkit for predicting Raman spectra from first-principles
+calculations with the Placzek approximation. It prepares finite-displacement
+structures, uses Phonopy symmetry information to reduce and reconstruct the
+required dielectric-tensor derivatives, and combines those derivatives with
+phonon eigenvectors to produce Raman tensors, intensities, and broadened plots.
 
-## Key Features
+SpectroPy does **not** run VASP, Quantum ESPRESSO, or another DFT engine. You
+run the displaced-structure calculations with your own DFT settings, scheduler,
+and convergence parameters; SpectroPy handles the preparation and analysis.
+VASP is the currently implemented output reader. Quantum ESPRESSO support is a
+future goal.
 
-- **Automated Setup**: Generates all necessary directories and displaced `POSCAR` files for finite displacement calculations.
-- **Data Harvesting**: Automatically collects results from multiple `vasprun.xml` files.
-- **Frequency-Dependent Tensors**: Calculates complex Raman tensors for a user-specified laser frequency.
-- **Spectrum Simulation**: Produces final, plottable spectra for both specific polarization geometries and orientation-averaged cases.
-- **Mode Visualization**: Generates output files for visualizing phonon modes in **VMD** or **VESTA**.
+![Example Raman spectrum plot](docs/images/Raman_plot_MoS2.png)
 
----
+## Features
 
-## Requirements
+- Generates finite-displacement `POSCAR` files from a relaxed `CONTCAR`.
+- Optionally uses Phonopy to generate a symmetry-reduced displacement set.
+- Prepares one calculation directory per displacement without prescribing a
+  VASP execution method.
+- Collects VASP `vasprun.xml` outputs and calculates complex,
+  frequency-dependent dielectric-tensor derivatives.
+- Reconstructs unmeasured directions and symmetry-equivalent atoms from
+  phonon symmetry operations.
+- Builds per-mode Raman tensors and intensities for specified and
+  orientation-averaged experimental geometries.
+- Produces Lorentzian- or Gaussian-broadened Raman plots.
+- Generates VMD or VESTA phonon-mode visualizations.
 
-Before you begin, ensure you have the following installed and available:
+## Installation
 
-- A working installation of **VASP**.
-- **Python 3.x** with the following packages:
-    ```bash
-    pip install numpy pyyaml
-    ```
-- The results of a **Phonopy** calculation for your material at the Gamma point (`q-position: [0, 0, 0]`).
-
----
-
-## Workflow & Usage Guide
-
-Follow these steps to calculate a Raman spectrum from a relaxed crystal structure.
-
-### Step 1: Prepare Your Directory
-
-Create a new directory for your Raman calculation. Inside this directory, you will need:
-
-1. A relaxed VASP structure file named `CONTCAR`.
-2. The results of your Phonopy calculation: `band.yaml` and (optionally) `irreps.yaml`.
-3. The three standard VASP input files you intend to use for the finite displacement calculations: `INCAR`, `KPOINTS`, and `POTCAR`.
-
-### Step 2: Generate Displacements
-
-Run the `create_displacements.py` script. This will read your `CONTCAR` and create a "recipe" of all required atomic movements.
+Install from a checkout:
 
 ```bash
-python create_displacements.py
+python -m pip install .
 ```
 
-**Input**: `CONTCAR`  
-**Output**: `displacements.dat` (A list of every atom to be displaced and the displacement vector).
-
-### Step 3: Prepare VASP Calculation Directories
-
-Run the `prepare_vasp_inputs.py` script. This script reads `displacements.dat` and automatically creates a dedicated subdirectory for each VASP calculation.
+Core dependencies are Python 3.9+, NumPy, and PyYAML. To use Phonopy-based
+minimal displacements and plotting, install the optional dependencies:
 
 ```bash
-python prepare_vasp_inputs.py
+python -m pip install '.[all]'
 ```
 
-**Input**: `CONTCAR`, `displacements.dat`  
-**Action**:  
-- Generates `poscar_<atom_id>` files for each displacement.  
-- Creates a shell script `setup_vasp_calcs.sh`.  
-- Automatically executes `setup_vasp_calcs.sh`, which creates all `raman_poscar_*` subdirectories and populates them with the correct `POSCAR` and symbolic links to your `INCAR`, `KPOINTS`, and `POTCAR`.
+VASP is an external, proprietary prerequisite. You also need a Phonopy
+calculation containing Gamma-point modes (`q-position: [0, 0, 0]`).
 
-### Step 4: Run VASP
+## Command-line interface
 
-This is the main computational step. You must now run VASP in each of the `raman_poscar_*` subdirectories that were just created. This is your responsibility and will depend on your specific computer or cluster environment.
-
-### Step 5: Calculate Dielectric Derivatives
-
-Once all VASP jobs are complete, run the `calculate_dielectric_derivatives.py` script. It will automatically find and process all the `vasprun.xml` files.
+The installed `spectropy` command runs existing workflow stages in the current
+directory. Use `--workdir` (or `-C`) to run a stage elsewhere.
 
 ```bash
-python calculate_dielectric_derivatives.py
+spectropy --help
+spectropy displacements --workdir /path/to/calculation
 ```
 
-**Action**:  
-- Prompts you to enter the laser frequency in eV.  
-- Automatically collects all `vasprun.xml` files from the `raman_poscar_*` directories and copies them to a new `vasprun` folder.  
-- Calculates the derivative of the dielectric tensor with respect to each atomic displacement.  
+| Command | Purpose |
+| --- | --- |
+| `spectropy displacements` | Create the legacy full `+/-x`, `+/-y`, `+/-z` displacement list from `CONTCAR`. |
+| `spectropy minimal-displacements` | Create a Phonopy symmetry-reduced set of displaced structures. |
+| `spectropy prepare-inputs` | Turn `displacements.dat` into VASP-ready displacement directories. |
+| `spectropy symmetry` | Read Phonopy's `symmetry` file and write atom-mapping matrices. |
+| `spectropy derivatives` | Read VASP dielectric data and write frequency-dependent dielectric derivatives. |
+| `spectropy static-derivatives` | Calculate static dielectric derivatives. |
+| `spectropy spectrum` | Combine `band.yaml` and derivatives into Raman tensors and intensities. |
+| `spectropy plot` | Interactively broaden and plot generated Raman intensities. |
 
-**Outputs**:  
-- `EPSILON_<freq>.dat`: A log file containing the dielectric tensor for each displacement.  
-- `dielectric_derivatives_<freq>.dat`: The final calculated atomic Raman tensors (dielectric tensor derivatives with respect to the atomic displacements) for the specified frequency.
-
-### Step 6: Calculate the Final Spectrum
-
-Finally, run the `calculate_spectrum.py` script to generate the plottable results.
+The CLI intentionally preserves the scripts' current interactive prompts and
+input/output file conventions. The original scripts can still be run directly,
+which is useful for options not yet forwarded by the CLI, for example:
 
 ```bash
-python calculate_spectrum.py
+python generate_minimal_displacements.py --amplitude 0.03 --template-dir inputs
+python visualize_modes.py
 ```
 
-**Action**:  
-- Prompts you for the experimental geometry (polarization of incident/scattered light).  
-- Combines the atomic Raman tensors (`dielectric_derivatives_<freq>.dat`) with the phonon eigenvectors (`band.yaml`).  
-- Calculates the final Mode Raman Tensors and corresponding intensities.  
+## Raman workflow
 
-**Outputs**:  
-- `Raman_tensor.dat`: The full complex Raman tensor for each vibrational mode.  
-- `Raman_intensity_specific.dat`: Frequency, intensity, and irreducible representations for your chosen polarization geometry.  
-- `Raman_intensity_averaged.dat`: Frequency, intensity, and irreducible representations for a randomly oriented or powder sample.
+The following workflow starts from a relaxed crystal structure. The
+[`MoS2_Tutorial`](MoS2_Tutorial/README.md) directory provides an example.
 
----
+### 1. Prepare a calculation directory
 
-## Advanced Usage
+Create a directory containing:
 
-### Publication-Quality Plotting (`generate_raman_plots.py`)
+1. A relaxed VASP structure named `CONTCAR`.
+2. Phonopy's Gamma-point `band.yaml` and, optionally, `irreps.yaml`.
+3. Phonopy's YAML `symmetry` output when using symmetry-reduced displacements
+   or derivative reconstruction.
+4. The DFT inputs to reuse for every displacement: normally `INCAR`,
+   `KPOINTS`, and `POTCAR` for VASP.
 
-This script automates the generation of publication-quality Raman spectra plots (with Lorentzian/Gaussian broadening) for every calculation in your project directory.
+### 2. Generate displacement structures
 
-![Example Raman Spectrum Plot](docs/images/Raman_plot_MoS2.png)
+Choose one approach:
 
-**Features:**
-- **Batch Processing:** Automatically scans all subdirectories for `Raman_intensity_specific.dat`.
-- **Publication Style:** Uses LaTeX formatting (so you will need it installed), inward ticks, and professional styling.
-- **Smart Labeling:** Automatically labels prominent peaks with their mode symmetry (e.g., $E_{2g}$), using arrows to point to the curve.
+```bash
+# Full finite-difference set: every atom in +/- Cartesian directions.
+spectropy displacements
+spectropy prepare-inputs
 
-**How to use:**
-1. Place `generate_raman_plots.py` in your top-level project folder (e.g., `TMDs`).
-2. Run the script:
-   ```bash
-   python generate_raman_plots.py
-
-### Automating Energy Scans
-
-To calculate the Raman response over a range of laser frequencies, you can use the provided `run_energy_scan.sh` script.
-
-1. Make the script executable:
-     ```bash
-     chmod +x run_energy_scan.sh
-     ```
-2. Run the script. It will prompt you for a start energy, end energy, and increment.
-     ```bash
-     ./run_energy_scan.sh
-     ```
-
-This will automatically call `calculate_dielectric_derivatives.py` for each energy step, generating separate `dielectric_derivatives_<freq>.dat` and `EPSILON_<freq>.dat` files for each one. You can then run `calculate_spectrum.py` on each of these files.
-
-### Pre-defining Experimental Geometry
-
-To avoid some of the interactive prompts in `calculate_spectrum.py`, you can create a file named `input` with the following format:
-
-```
-1.0 0.0 0.0   ! polarization of the incident light
-0.0 1.0 0.0   ! polarization of the scattered light
-z             ! the surface normal (or out-of-plane) direction
+# Recommended when Phonopy is installed: symmetry-reduced displacement set.
+spectropy minimal-displacements
 ```
 
-# Additional Utilities
+`spectropy displacements` writes `ref_poscar.vasp` and `displacements.dat`.
+`spectropy prepare-inputs` creates `poscar_*` files, `raman_poscar_*`
+directories with `POSCAR`, and helper scripts `setup_vasp_calcs.sh` and
+`collect_results.sh`. It links `INCAR`, `KPOINTS`, and `POTCAR` from the
+calculation directory into each displacement directory.
 
-## Visualizing Phonon Modes (`visualize_modes.py`)
+The minimal-displacement route directly creates `raman_poscar_*` directories,
+each containing a displaced `POSCAR`, and writes compatible
+`ref_poscar.vasp` and `displacements.dat` files. Pass `--template-dir` to its
+Python script if those directories should receive copies of VASP input files.
 
-This script generates files to visualize the atomic motion of each phonon mode in either **VMD** or **VESTA**.
+### 3. Run DFT calculations
 
----
+Run your DFT code in every `raman_poscar_*` directory. SpectroPy does not
+choose your functional, k-point mesh, dielectric settings, executable, or job
+submission strategy. For the VASP frequency-dependent workflow, each completed
+directory must contain `vasprun.xml` with dielectric-function data at the
+requested laser energy.
 
-### How to use:
+### 4. Process symmetry and dielectric derivatives
 
-#### For VESTA (Recommended):
+For a symmetry-reduced calculation, first create the atom mapping data:
 
-1. Open your `CONTCAR` file in **VESTA**.  
-2. Save the file as a VESTA project file (e.g., `template.vesta`) in your working directory.
+```bash
+spectropy symmetry
+```
 
----
+Then collect the VASP outputs and calculate derivatives:
 
-### Run the script:
+```bash
+spectropy derivatives
+```
+
+The command prompts for the laser frequency in eV. It copies
+`raman_poscar_*/vasprun.xml` into `vasprun/`, then writes:
+
+- `EPSILON_<frequency>.dat`: dielectric tensor log for each displacement.
+- `dielectric_derivatives_<frequency>`: complex dielectric-tensor derivatives
+  for all atoms, including symmetry-reconstructed data where applicable.
+
+For static dielectric tensors, use `spectropy static-derivatives` instead.
+
+### 5. Calculate the Raman spectrum
+
+```bash
+spectropy spectrum
+```
+
+This command reads `band.yaml`, an available `dielectric_derivatives_<frequency>`
+file, and `irreps.yaml` when present. It prompts for the experimental geometry
+unless an `input` file is provided, then writes:
+
+- `Raman_tensor.dat`: complex Raman tensor for each vibrational mode.
+- `Raman_intensity_specific.dat`: frequency, intensity, and representation for
+  the requested polarization geometry.
+- `Raman_intensity_averaged.dat`: orientation-averaged/powder intensities.
+
+To predefine the geometry, create `input` as follows:
+
+```text
+1.0 0.0 0.0   ! incident-light polarization
+0.0 1.0 0.0   ! scattered-light polarization
+z             ! surface-normal direction
+```
+
+### 6. Broaden and plot results
+
+```bash
+spectropy plot
+```
+
+The plotter prompts for a full width at half maximum and for Lorentzian or
+Gaussian broadening. It scans the current directory tree for Raman intensity
+files and writes publication-style PNG plots alongside them. If LaTeX is
+installed it is used for rendering; otherwise Matplotlib's standard fonts are
+used.
+
+## Energy scans
+
+`run_energy_scan.sh` automates the interactive frequency prompt for a range of
+laser energies. Make it executable and run it from the calculation directory:
+
+```bash
+chmod +x run_energy_scan.sh
+./run_energy_scan.sh
+```
+
+It generates separate `EPSILON_<frequency>.dat` and
+`dielectric_derivatives_<frequency>` files. Run the spectrum stage for each
+derivative file you want to analyze.
+
+## Phonon-mode visualization
+
+`visualize_modes.py` generates VMD, VESTA, or both kinds of visualization
+files from the phonon modes. For VESTA, first open `CONTCAR` in VESTA and save
+a project file such as `template.vesta` in the calculation directory.
+
 ```bash
 python visualize_modes.py
 ```
 
-### Answer the prompts:
+The script prompts for arrow scaling, output format, and—when needed—the VESTA
+template. It creates `VESTA_MODES` and/or `VMD_MODES`. To load a VMD mode:
 
-- **Arrow scaling factor:** A number to control the arrow length (e.g., `0.5`). A negative value can be used to reverse the arrow direction.
-- **Select output format:** Type `e` for **VESTA**, `v` for **VMD**, or `b` for **Both**.
-- **Enter template file:** (If you chose VESTA) Type the name of the file you saved in step 1 (e.g., `template.vesta`).
-
----
-
-### Output
-
-The script will generate new folders (`VESTA_MODES` and/or `VMD_MODES`) containing the visualization files for each mode.
-
-- **`.vesta` files:** Open these in **VESTA** to see the structure and arrows automatically.  
-- **`.vmd` files:** Open **VMD**, go to `Extensions > Tk Console`, and type:
-  ```tcl
-  source VMD_MODES/mode_001.vmd
-  ```
-  to load the arrows for mode 1.
-
+```tcl
+source VMD_MODES/mode_001.vmd
+```
 
 ## Citation
 
-If you use **SpectroPy** in your research, please cite our paper:
+If you use SpectroPy in your research, please cite:
 
 > **Raman Digital Twin of Monolayer Janus Transition Metal Dichalcogenides**
-> *Johnathan Kowalski and Liangbo Liang*
-> *ACS Applied Materials & Interfaces*, **2025**, *Article ASAP*
-> **DOI:** [10.1021/acsami.5c20316](https://doi.org/10.1021/acsami.5c20316)
-
-### BibTeX
+> Johnathan Kowalski and Liangbo Liang
+> *ACS Applied Materials & Interfaces* (2025), Article ASAP.
+> DOI: [10.1021/acsami.5c20316](https://doi.org/10.1021/acsami.5c20316)
 
 ```bibtex
 @article{SpectroPy_Janus2025,
@@ -208,6 +231,10 @@ If you use **SpectroPy** in your research, please cite our paper:
   year = {2025},
   note = {Article ASAP},
   doi = {10.1021/acsami.5c20316},
-  url = {[https://doi.org/10.1021/acsami.5c20316](https://doi.org/10.1021/acsami.5c20316)}
+  url = {https://doi.org/10.1021/acsami.5c20316}
 }
+```
 
+## License
+
+SpectroPy is released under the [MIT License](LICENSE).

@@ -4,14 +4,19 @@ from matplotlib import rc
 import os
 import sys
 import re
+import shutil
 
 # --- 1. Publication-Style Configuration ---
-try:
-    # Uses Helvetica/Sans-Serif
+# rc('text', usetex=True) never raises by itself -- it just sets a param;
+# matplotlib only discovers latex is missing later, while actually rendering
+# text (deep inside tight_layout/savefig), so a try/except around rc() alone
+# never catches the missing-latex case. Check for the binary up front instead.
+if shutil.which('latex'):
     rc('text', usetex=True)
     rc('font', **{'family': 'sans-serif', 'sans-serif': ['Helvetica', 'Arial']})
-except:
+else:
     print("Notice: LaTeX not found. Using standard Matplotlib fonts.")
+    rc('text', usetex=False)
     rc('font', family='sans-serif')
 
 # --- 2. Math & Helper Functions ---
@@ -44,7 +49,7 @@ def format_mode_for_latex(mode_str):
             prime_latex = ""
 
         return f'${base}{subscript_latex}{prime_latex}$'
-    
+
     # Fallback
     return f'${mode_str}$'
 
@@ -52,14 +57,18 @@ def format_mode_for_latex(mode_str):
 
 def process_and_plot(input_file, fwhm=5.0, b_type='l'):
     try:
-        # Load Data: Skip header, read columns 0, 1, 2
-        raw_data = np.loadtxt(input_file, skiprows=1, dtype=str)
+        # raman_tensor's Raman_intensity_polarization_averaged_<eV>eV /
+        # Raman_intensity_complex_<eV>eV have no header row and only two
+        # columns: frequency (cm-1) and intensity. There is no per-mode
+        # symmetry label in this output (raman_tensor doesn't write an
+        # irreps.yaml), so peaks are annotated with their frequency instead.
+        raw_data = np.loadtxt(input_file, dtype=float)
         if raw_data.size == 0: return
         if raw_data.ndim == 1: raw_data = raw_data.reshape(1, -1)
-        
-        freqs = raw_data[:, 0].astype(float)
-        intensities = raw_data[:, 1].astype(float)
-        modes = raw_data[:, 2]
+
+        freqs = raw_data[:, 0]
+        intensities = raw_data[:, 1]
+        modes = [f"{f:.1f}" for f in freqs]
     except Exception as e:
         print(f"      Error reading {os.path.basename(input_file)}: {e}")
         return
@@ -125,8 +134,12 @@ def process_and_plot(input_file, fwhm=5.0, b_type='l'):
 
     plt.tight_layout()
     
-    # Save Output
-    out_name = os.path.join(os.path.dirname(input_file), f"Raman_plot_styled.png")
+    # Save Output -- one file per input (a directory can hold one plot per
+    # incident energy), named after the source data file. Not splitext: names
+    # like "..._2.33eV" have a '.' inside the energy value itself, which
+    # splitext would mistake for a file extension and truncate.
+    base = os.path.basename(input_file)
+    out_name = os.path.join(os.path.dirname(input_file), f"Raman_plot_styled_{base}.png")
     plt.savefig(out_name, dpi=300)
     plt.close()
     print(f"   -> Created {out_name}")
@@ -146,15 +159,19 @@ def run_automation():
     b_type = val_type if val_type in ['l', 'g'] else 'l'
 
     count = 0
-    # Walk Directory
+    # Walk Directory -- raman_tensor names its per-energy output
+    # Raman_intensity_polarization_averaged_<eV>eV / Raman_intensity_complex_<eV>eV
+    # (no fixed "Raman_intensity_specific.dat" name as in the old binary).
+    # Plot the polarization-averaged variant: it's the one directly comparable
+    # to an experimental (unpolarized) Raman spectrum.
+    target_re = re.compile(r"^Raman_intensity_polarization_averaged_.+eV$")
     for root, dirs, files in os.walk(base_path):
-        target_file = "Raman_intensity_specific.dat"
-        
-        if target_file in files:
-            full_path = os.path.join(root, target_file)
-            print(f"Processing: {os.path.basename(root)}")
-            process_and_plot(full_path, fwhm, b_type)
-            count += 1
+        for fname in files:
+            if target_re.match(fname):
+                full_path = os.path.join(root, fname)
+                print(f"Processing: {os.path.join(os.path.basename(root), fname)}")
+                process_and_plot(full_path, fwhm, b_type)
+                count += 1
 
     print(f"\nSuccess! Generated {count} plots.")
 
