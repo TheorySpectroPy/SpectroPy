@@ -54,16 +54,15 @@ directory. Use `--workdir` (or `-C`) to run a stage elsewhere.
 
 ```bash
 spectropy --help
-spectropy displacements --workdir /path/to/calculation
+spectropy displacements --mode minimal --workdir /path/to/calculation
 ```
 
 | Command | Purpose |
 | --- | --- |
-| `spectropy displacements` | Create the legacy full `+/-x`, `+/-y`, `+/-z` displacement list from `CONTCAR`. |
-| `spectropy minimal-displacements` | Create a Phonopy symmetry-reduced set of displaced structures. |
-| `spectropy prepare-inputs` | Turn `displacements.dat` into VASP-ready displacement directories. |
-| `spectropy symmetry` | Read Phonopy's `symmetry` file and write atom-mapping matrices. |
-| `spectropy derivatives` | Read VASP dielectric data and write frequency-dependent dielectric derivatives. |
+| `spectropy displacements --mode full` | Create the full `+/-x`, `+/-y`, `+/-z` set for every atom and VASP-ready directories. |
+| `spectropy displacements --mode atoms` | Create the full `+/-x`, `+/-y`, `+/-z` set for symmetry-inequivalent atoms only. |
+| `spectropy displacements --mode minimal` | Create Phonopy's minimum symmetry-reduced displacement set. |
+| `spectropy derivatives` | Process Phonopy symmetry, then read VASP dielectric data and write frequency-dependent dielectric derivatives. |
 | `spectropy static-derivatives` | Calculate static dielectric derivatives. |
 | `spectropy spectrum` | Combine `band.yaml` and derivatives into Raman tensors and intensities. |
 | `spectropy plot` | Interactively broaden and plot generated Raman intensities. |
@@ -95,27 +94,34 @@ Create a directory containing:
 
 ### 2. Generate displacement structures
 
-Choose one approach:
-
 ```bash
 # Full finite-difference set: every atom in +/- Cartesian directions.
-spectropy displacements
-spectropy prepare-inputs
+spectropy displacements --mode full
 
-# Recommended when Phonopy is installed: symmetry-reduced displacement set.
-spectropy minimal-displacements
+# Full +/- Cartesian set, but only one atom from each symmetry-equivalent set.
+# Requires Phonopy's `symmetry` file.
+spectropy displacements --mode atoms
+
+# Symmetry-reduced set (requires Phonopy).
+spectropy displacements --mode minimal
 ```
 
-`spectropy displacements` writes `ref_poscar.vasp` and `displacements.dat`.
-`spectropy prepare-inputs` creates `poscar_*` files, `raman_poscar_*`
-directories with `POSCAR`, and helper scripts `setup_vasp_calcs.sh` and
-`collect_results.sh`. It links `INCAR`, `KPOINTS`, and `POTCAR` from the
-calculation directory into each displacement directory.
+The full mode writes `ref_poscar.vasp` and `displacements.dat`, creates
+`poscar_*` files and `raman_poscar_*` directories with `POSCAR`, and provides
+helper scripts `setup_vasp_calcs.sh` and `collect_results.sh`. It links
+`INCAR`, `KPOINTS`, and `POTCAR` from the calculation directory into each
+displacement directory.
 
 The minimal-displacement route directly creates `raman_poscar_*` directories,
 each containing a displaced `POSCAR`, and writes compatible
 `ref_poscar.vasp` and `displacements.dat` files. Pass `--template-dir` to its
 Python script if those directories should receive copies of VASP input files.
+
+The `atoms` mode is the intermediate option used by the Raman pipeline's
+symmetry displacement generator: it retains all six `+/-x`, `+/-y`, `+/-z`
+finite differences but generates them only for symmetry-inequivalent atoms.
+It requires Phonopy's YAML `symmetry` file and reconstructs the remaining
+atoms during the derivative stage.
 
 ### 3. Run DFT calculations
 
@@ -127,19 +133,12 @@ requested laser energy.
 
 ### 4. Process symmetry and dielectric derivatives
 
-For a symmetry-reduced calculation, first create the atom mapping data:
-
-```bash
-spectropy symmetry
-```
-
-Then collect the VASP outputs and calculate derivatives:
-
 ```bash
 spectropy derivatives
 ```
 
-The command prompts for the laser frequency in eV. It copies
+This command processes Phonopy's `symmetry` file, then prompts for the laser
+frequency in eV. It copies
 `raman_poscar_*/vasprun.xml` into `vasprun/`, then writes:
 
 - `EPSILON_<frequency>.dat`: dielectric tensor log for each displacement.

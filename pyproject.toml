@@ -39,6 +39,7 @@ py-modules = [
     "calculate_spectrum",
     "create_displacements",
     "generate_minimal_displacements",
+    "generate_atom_displacements",
     "generate_raman_plots",
     "prepare_vasp_inputs",
     "process_symmetry",
