@@ -94,7 +94,9 @@ def run_generate_displacements():
             suffix = alphabet[disp_counter[label]]
             disp_counter[label] += 1
             
-            poscar_filename = f"poscar_{label}{suffix}"
+            # Match the long-standing Raman workflow convention:
+            # pos_atom1a -> ra_pos_atom1a/POSCAR.
+            poscar_filename = f"pos_atom{atom_idx_1based}{suffix}"
             
             # Write the copy command to the collect_results.sh script
             xml_name = f"{label}{suffix}"
@@ -127,7 +129,7 @@ def run_generate_displacements():
         f_run.write("# This script sets up a calculation directory for each displaced POSCAR.\n")
         f_run.write("# After running this, you will need to run VASP in each 'raman_poscar_*' subdirectory.\n")
         f_run.write("\n")
-        f_run.write("for d in poscar_*; do\n")
+        f_run.write("for d in pos_*; do\n")
         f_run.write("  folder_name=\"raman_$d\"\n") 
         f_run.write("  echo \"Setting up directory for $folder_name\"\n")
         f_run.write("  mkdir -p \"$folder_name\"\n")

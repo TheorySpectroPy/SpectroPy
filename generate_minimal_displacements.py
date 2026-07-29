@@ -85,7 +85,7 @@ def run_generate(contcar_path="CONTCAR", amplitude=0.03, template_dir=None):
         suffix = ascii_lowercase[suffix_counter[label]]
         suffix_counter[label] += 1
 
-        dirname = f"raman_poscar_{label}{suffix}"
+        dirname = f"ra_pos_atom{atom0 + 1}{suffix}"
         os.makedirs(dirname, exist_ok=True)
 
         displaced_positions = ph.unitcell.scaled_positions.copy()

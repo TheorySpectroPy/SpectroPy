@@ -2,6 +2,7 @@ import numpy as np
 import os
 import sys
 import shutil
+import re
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 
@@ -67,7 +68,26 @@ def read_diel_from_xml(xml_path, target_frequency):
         return None, None
 
 
-def run_generate_derivatives():
+def read_laser_energies(input_path="input"):
+    """Read ``laser_energies`` from input, defaulting to the 0.00 eV limit."""
+    if not os.path.exists(input_path):
+        return [0.0]
+    with open(input_path) as handle:
+        for raw_line in handle:
+            line = raw_line.split("!", 1)[0].split("#", 1)[0].strip()
+            match = re.match(r"^laser_energies?\s*(?::|=|\s)\s*(.+)$", line, re.I)
+            if match:
+                try:
+                    energies = [float(value) for value in match.group(1).replace(",", " ").split()]
+                except ValueError as error:
+                    raise ValueError(f"Invalid laser_energies line: {raw_line.rstrip()}") from error
+                if not energies:
+                    raise ValueError("laser_energies must contain at least one value")
+                return list(dict.fromkeys(energies))
+    return [0.0]
+
+
+def run_generate_derivatives(target_frequency):
     """
     Collects VASP outputs and computes each atom's full dielectric-derivative
     tensor D_ijk, supporting a VARIABLE number of displacements per atom (not
@@ -113,8 +133,12 @@ def run_generate_derivatives():
 
     for disp_data, suffix in zip(displacements, suffixes):
         label = disp_data['label']
-        source_dir_name = f"raman_poscar_{label}{suffix}"
+        source_dir_name = f"ra_pos_atom{disp_data['index']}{suffix}"
         source_path = os.path.join(source_dir_name, "vasprun.xml")
+        # Accept pre-existing directories from the earlier Python layout too.
+        if not os.path.exists(source_path):
+            source_dir_name = f"raman_poscar_{label}{suffix}"
+            source_path = os.path.join(source_dir_name, "vasprun.xml")
         dest_filename = f"{label}{suffix}.xml"
         dest_path = os.path.join("vasprun", dest_filename)
         try:
@@ -128,12 +152,7 @@ def run_generate_derivatives():
     print("-" * 40)
 
     print("Program <calculate_dielectric_derivatives.py>")
-    print("Calculates derivatives of dielectric tensors from the collected vasprun.xml files.")
-    try:
-        target_frequency = float(input("Please input the laser frequency (eV): "))
-    except ValueError:
-        print("Invalid frequency. Exiting.")
-        sys.exit(1)
+    print(f"Calculating dielectric-tensor derivatives at {target_frequency:.2f} eV.")
     print("-" * 40)
 
     print("Reading ref_poscar.vasp...")
@@ -151,13 +170,13 @@ def run_generate_derivatives():
         positions = np.array([list(map(float, l.split()[:3])) for l in lines[7:7 + total_atoms]])
 
     print("Processing vasprun.xml files from vasprun directory...")
-    epsilon_log_filename = f"EPSILON_{target_frequency:.2f}.dat"
+    epsilon_log_filename = f"dielectric_tensor_{target_frequency:.2f}"
     per_atom_raw = defaultdict(list)  # atom_idx (1-based) -> [(cart_dir, eps_real, eps_imag), ...]
 
     with open(epsilon_log_filename, 'w') as f_log:
-        f_log.write(f"Dielectric tensors for target frequency {target_frequency:.4f} eV\n")
-        f_log.write("File                 Positions (frac)              Displacement (Angstrom)\n")
-        f_log.write("-" * 80 + "\n")
+        f_log.write(
+            f" Atomic displacement dielectric tensors at {target_frequency:.2f} eV\n"
+        )
 
         for disp_data, suffix in zip(displacements, suffixes):
             label = disp_data['label']
@@ -171,14 +190,11 @@ def run_generate_derivatives():
             cart_disp_vec = disp_data['vector'] @ lattice_vectors
             per_atom_raw[disp_data['index']].append((cart_disp_vec, eps_real, eps_imag))
 
-            pos_str = " ".join([f"{p:8.5f}" for p in positions[disp_data['index'] - 1]])
-            disp_str = " ".join([f"{d:8.5f}" for d in cart_disp_vec])
-            f_log.write(f"{xml_filename:<12s}   {pos_str}      {disp_str}\n")
+            pos_str = " ".join(f"{p:9.6f}" for p in positions[disp_data['index'] - 1])
+            disp_str = " ".join(f"{d:9.6f}" for d in cart_disp_vec)
+            f_log.write(f" atom{disp_data['index']} {pos_str} {disp_str}\n")
             for j in range(3):
-                real_str = " ".join([f"{x:10.6f}" for x in eps_real[j]])
-                imag_str = " ".join([f"{x:10.6f}" for x in eps_imag[j]])
-                f_log.write(f"  real: {real_str} | imag: {imag_str}\n")
-            f_log.write("\n")
+                f_log.write("".join(f" {real:12.7f} {imag:12.7f}" for real, imag in zip(eps_real[j], eps_imag[j])) + "\n")
 
     print(f"Finished processing XMLs. Log written to {epsilon_log_filename}")
 
@@ -209,7 +225,7 @@ def run_generate_derivatives():
     D_real_all = expand_to_equivalent_atoms(D_real_by_independent, atom_mapping, mapping_matrices_cart)
     D_imag_all = expand_to_equivalent_atoms(D_imag_by_independent, atom_mapping, mapping_matrices_cart)
 
-    dielectric_derivatives_filename = f"dielectric_derivatives_{target_frequency:.2f}"
+    dielectric_derivatives_filename = f"epsilon_derivative_{target_frequency:.2f}"
     print(f"Writing final derivatives of dielectric tensors to {dielectric_derivatives_filename}...")
 
     pi = np.pi
@@ -218,26 +234,25 @@ def run_generate_derivatives():
 
     all_atom_indices = sorted(D_real_all.keys())
     with open(dielectric_derivatives_filename, 'w') as f:
-        f.write(f"! derivatives of dielectric tensors calculated for laser frequency {target_frequency:.4f} eV\n")
-        f.write("! from VASP vasprun.xml files\n")
-        f.write("!\n! Unit cell matrix:\n")
+        f.write(f"! epsilon derivatives calculated for laser frequency {target_frequency:.4f} eV\n")
+        f.write("! Unit cell matrix:\n")
         for vec in lattice_vectors.T:
             f.write(f"!   {vec[0]:21.16f} {vec[1]:21.16f} {vec[2]:21.16f}\n")
-        f.write("!\n! derivatives of dielectric tensors\n")
-
-        f.write("! The Real Part of dielectric tensor derivatives:\n")
+        f.write("!======================================================\n")
+        f.write("!-------------------------------------------------------\n")
+        f.write(" ! Real Part of epsilon derivative tensor per atom along x, y, and z directions\n")
         for atom_idx in all_atom_indices:
             pos = positions[atom_idx - 1]
-            f.write(f"      atom{atom_idx} {pos[0]:10.6f} {pos[1]:10.6f} {pos[2]:10.6f}\n")
+            f.write(f"      Atom {atom_idx} {pos[0]:10.6f} {pos[1]:10.6f} {pos[2]:10.6f}\n")
             D = D_real_all[atom_idx] * conv_factor
             tensor_to_print = np.hstack((D[:, :, 0], D[:, :, 1], D[:, :, 2]))
             for row in tensor_to_print:
                 f.write("".join([f"{x:16.4f}" for x in row]) + "\n")
 
-        f.write("\n! The Imaginary Part of dielectric tensor derivatives:\n")
+        f.write("\n ! Imaginary Part of epsilon derivative tensor per atom along x, y, and z directions\n")
         for atom_idx in all_atom_indices:
             pos = positions[atom_idx - 1]
-            f.write(f"      atom{atom_idx} {pos[0]:10.6f} {pos[1]:10.6f} {pos[2]:10.6f}\n")
+            f.write(f"      Atom {atom_idx} {pos[0]:10.6f} {pos[1]:10.6f} {pos[2]:10.6f}\n")
             D = D_imag_all[atom_idx] * conv_factor
             tensor_to_print = np.hstack((D[:, :, 0], D[:, :, 1], D[:, :, 2]))
             for row in tensor_to_print:
@@ -249,5 +264,13 @@ def run_generate_derivatives():
           f"{len(all_atom_indices) - len(per_atom_raw)} filled in by symmetry).")
 
 
+def run_generate_derivatives_for_input(input_path="input"):
+    """Calculate derivatives at every laser energy specified in ``input``."""
+    energies = read_laser_energies(input_path)
+    print("Laser energies (eV): " + ", ".join(f"{energy:.2f}" for energy in energies))
+    for energy in energies:
+        run_generate_derivatives(energy)
+
+
 if __name__ == "__main__":
-    run_generate_derivatives()
+    run_generate_derivatives_for_input()

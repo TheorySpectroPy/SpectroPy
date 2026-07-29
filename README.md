@@ -47,6 +47,21 @@ python -m pip install '.[all]'
 VASP is an external, proprietary prerequisite. You also need a Phonopy
 calculation containing Gamma-point modes (`q-position: [0, 0, 0]`).
 
+### `input` file
+
+Each calculation directory may contain an `input` file. Its first three lines
+retain the established MoS₂-style geometry format (incident polarization,
+scattered polarization, then surface normal). Add `laser_energies:` to request
+one or more dielectric-derivative energies. If the line is omitted, SpectroPy
+uses `0.00 eV`, the static-limit calculation.
+
+```text
+1.0 0.0 0.0
+1.0 0.0 0.0
+z
+laser_energies: 0.00 1.96 2.33
+```
+
 ## Command-line interface
 
 The installed `spectropy` command runs existing workflow stages in the current
@@ -62,8 +77,7 @@ spectropy displacements --mode minimal --workdir /path/to/calculation
 | `spectropy displacements --mode full` | Create the full `+/-x`, `+/-y`, `+/-z` set for every atom and VASP-ready directories. |
 | `spectropy displacements --mode atoms` | Create the full `+/-x`, `+/-y`, `+/-z` set for symmetry-inequivalent atoms only. |
 | `spectropy displacements --mode minimal` | Create Phonopy's minimum symmetry-reduced displacement set. |
-| `spectropy derivatives` | Process Phonopy symmetry, then read VASP dielectric data and write frequency-dependent dielectric derivatives. |
-| `spectropy static-derivatives` | Calculate static dielectric derivatives. |
+| `spectropy derivatives` | Process Phonopy symmetry, then evaluate dielectric derivatives at every laser energy in `input`. |
 | `spectropy spectrum` | Combine `band.yaml` and derivatives into Raman tensors and intensities. |
 | `spectropy plot` | Interactively broaden and plot generated Raman intensities. |
 
@@ -106,13 +120,14 @@ spectropy displacements --mode atoms
 spectropy displacements --mode minimal
 ```
 
-The full mode writes `ref_poscar.vasp` and `displacements.dat`, creates
-`poscar_*` files and `raman_poscar_*` directories with `POSCAR`, and provides
+The full mode writes `ref_poscar.vasp`, `displacements.dat`, and the
+pipeline-compatible `atomic_displacement`, creates
+`pos_atom*` files and `ra_pos_atom*` directories with `POSCAR`, and provides
 helper scripts `setup_vasp_calcs.sh` and `collect_results.sh`. It links
 `INCAR`, `KPOINTS`, and `POTCAR` from the calculation directory into each
 displacement directory.
 
-The minimal-displacement route directly creates `raman_poscar_*` directories,
+The minimal-displacement route directly creates `ra_pos_atom*` directories,
 each containing a displaced `POSCAR`, and writes compatible
 `ref_poscar.vasp` and `displacements.dat` files. Pass `--template-dir` to its
 Python script if those directories should receive copies of VASP input files.
@@ -125,7 +140,7 @@ atoms during the derivative stage.
 
 ### 3. Run DFT calculations
 
-Run your DFT code in every `raman_poscar_*` directory. SpectroPy does not
+Run your DFT code in every `ra_pos_atom*` directory. SpectroPy does not
 choose your functional, k-point mesh, dielectric settings, executable, or job
 submission strategy. For the VASP frequency-dependent workflow, each completed
 directory must contain `vasprun.xml` with dielectric-function data at the
@@ -137,15 +152,16 @@ requested laser energy.
 spectropy derivatives
 ```
 
-This command processes Phonopy's `symmetry` file, then prompts for the laser
-frequency in eV. It copies
-`raman_poscar_*/vasprun.xml` into `vasprun/`, then writes:
+This command processes Phonopy's `symmetry` file, then evaluates every
+`laser_energies` value in `input`. It copies
+`ra_pos_atom*/vasprun.xml` into `vasprun/`, then writes:
 
-- `EPSILON_<frequency>.dat`: dielectric tensor log for each displacement.
-- `dielectric_derivatives_<frequency>`: complex dielectric-tensor derivatives
+- `dielectric_tensor_<frequency>`: dielectric tensor for every displacement.
+- `epsilon_derivative_<frequency>`: complex dielectric-tensor derivatives
   for all atoms, including symmetry-reconstructed data where applicable.
 
-For static dielectric tensors, use `spectropy static-derivatives` instead.
+When `laser_energies` is absent, SpectroPy evaluates the default `0.00 eV`
+case. This replaces the separate static-derivative workflow.
 
 ### 5. Calculate the Raman spectrum
 
@@ -153,21 +169,23 @@ For static dielectric tensors, use `spectropy static-derivatives` instead.
 spectropy spectrum
 ```
 
-This command reads `band.yaml`, an available `dielectric_derivatives_<frequency>`
-file, and `irreps.yaml` when present. It prompts for the experimental geometry
-unless an `input` file is provided, then writes:
+This command reads `band.yaml`, `irreps.yaml` when present, and the derivative
+file for every `laser_energies` value in `input`. It prompts for the
+experimental geometry unless `input` is provided, then writes:
 
-- `Raman_tensor.dat`: complex Raman tensor for each vibrational mode.
-- `Raman_intensity_specific.dat`: frequency, intensity, and representation for
-  the requested polarization geometry.
-- `Raman_intensity_averaged.dat`: orientation-averaged/powder intensities.
+- `Raman_tensor`: complex Raman tensor for each vibrational mode.
+- `Raman_intensity_complex_<energy>eV`: frequency and intensity for the
+  requested polarization geometry.
+- `Raman_intensity_polarization_averaged_<energy>eV`: orientation-averaged
+  (powder) intensities.
 
-To predefine the geometry, create `input` as follows:
+To predefine the geometry and laser energies, create `input` as follows:
 
 ```text
 1.0 0.0 0.0   ! incident-light polarization
 0.0 1.0 0.0   ! scattered-light polarization
 z             ! surface-normal direction
+laser_energies: 0.00 1.96 2.33 ! eV; 0.00 is the static-limit calculation
 ```
 
 ### 6. Broaden and plot results
@@ -181,20 +199,6 @@ Gaussian broadening. It scans the current directory tree for Raman intensity
 files and writes publication-style PNG plots alongside them. If LaTeX is
 installed it is used for rendering; otherwise Matplotlib's standard fonts are
 used.
-
-## Energy scans
-
-`run_energy_scan.sh` automates the interactive frequency prompt for a range of
-laser energies. Make it executable and run it from the calculation directory:
-
-```bash
-chmod +x run_energy_scan.sh
-./run_energy_scan.sh
-```
-
-It generates separate `EPSILON_<frequency>.dat` and
-`dielectric_derivatives_<frequency>` files. Run the spectrum stage for each
-derivative file you want to analyze.
 
 ## Phonon-mode visualization
 

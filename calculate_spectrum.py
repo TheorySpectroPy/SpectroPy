@@ -8,10 +8,17 @@ def get_user_input():
     """Gets polarization vectors from 'input' file or user prompt."""
     if os.path.exists("input"):
         print("Reading experimental geometry from 'input' file...")
-        settings = np.loadtxt("input", usecols=(0, 1, 2), dtype=str)
-        pol_incident = settings[0].astype(float)
-        pol_scattered = settings[1].astype(float)
-        axis = settings[2, 0].lower()
+        settings = []
+        with open("input") as handle:
+            for raw_line in handle:
+                line = raw_line.split("!", 1)[0].split("#", 1)[0].strip()
+                if line and not line.lower().startswith("laser_energies"):
+                    settings.append(line.split())
+        if len(settings) < 3:
+            raise ValueError("input needs incident/scattered polarizations and a surface normal")
+        pol_incident = np.array(settings[0][:3], dtype=float)
+        pol_scattered = np.array(settings[1][:3], dtype=float)
+        axis = settings[2][0].lower()
     else:
         print("Please define the experimental geometry.")
         pol_incident_str = input("Enter polarization of incident light (e.g., 1.0 0.0 0.0): ")
@@ -25,6 +32,7 @@ def get_user_input():
             f.write(f"{pol_incident[0]:4.1f} {pol_incident[1]:4.1f} {pol_incident[2]:4.1f}   ! Incident polarization\n")
             f.write(f"{pol_scattered[0]:4.1f} {pol_scattered[1]:4.1f} {pol_scattered[2]:4.1f}   ! Scattered polarization\n")
             f.write(f"{axis} 0.0 0.0      ! Surface normal\n")
+            f.write("laser_energies: 0.00 ! eV\n")
             
     return pol_incident, pol_scattered, axis
 
@@ -87,9 +95,9 @@ def read_dielectric_derivatives(filepath, total_atoms):
     real_start_idx = -1
     imag_start_idx = -1
     for i, line in enumerate(lines):
-        if "! The Real Part of dielectric tensor derivatives:" in line:
+        if "Real Part" in line:
             real_start_idx = i + 1
-        if "! The Imaginary Part of dielectric tensor derivatives:" in line:
+        if "Imaginary Part" in line:
             imag_start_idx = i + 1
 
     def is_float(s):
@@ -175,17 +183,17 @@ def read_irreps(filepath="irreps.yaml"):
             reps[band_index] = mode['ir_label']
     return [reps.get(i + 1, '---') for i in range(len(reps))]
     
-def run_raman_tensor():
+def run_raman_tensor(dielectric_derivatives_path=None):
     """Main function to synthesize all data and calculate final intensities."""
     # --- Check for required input files ---
     # Smartly find the dielectric_derivatives based on a pattern
-    dielectric_derivatives_path = None
-    for f in os.listdir('.'):
-        if f.startswith("dielectric_derivatives_"):
-            dielectric_derivatives_path = f
-            break
     if dielectric_derivatives_path is None:
-        print("***** dielectric_derivatives_<freq> not found. Did you run calculate_dielectric_derivatives.py? *****")
+        for f in sorted(os.listdir('.')):
+            if f.startswith("epsilon_derivative_"):
+                dielectric_derivatives_path = f
+                break
+    if dielectric_derivatives_path is None:
+        print("***** epsilon_derivative_<freq> not found. Did you run `spectropy derivatives`? *****")
         sys.exit(1)
 
     # --- Get Inputs ---
@@ -243,8 +251,11 @@ def run_raman_tensor():
     # --- Write Output Files ---
     print("Writing final output files...")
     
-    # 1. Raman_tensor file
-    with open("Raman_tensor.dat", "w") as f:
+    energy = dielectric_derivatives_path.removeprefix("epsilon_derivative_")
+
+    # Match the established Raman-workflow filenames: a single Raman_tensor
+    # file plus one two-column intensity file per laser energy.
+    with open("Raman_tensor", "w") as f:
         f.write("# Mode   Freq(THz)   Freq(cm-1)   Irrep.   Raman Tensor (Real + i*Imaginary)\n")
         f.write("#--------------------------------------------------------------------------\n")
         for i in range(n_modes):
@@ -255,23 +266,27 @@ def run_raman_tensor():
                 f.write(f"    {row_str}\n")
             f.write("\n")
 
-    # 2. Specific intensity file
-    with open("Raman_intensity_specific.dat", "w") as f:
-        f.write("# Freq(cm-1)   Intensity(arb.)   Irrep.\n")
+    with open(f"Raman_intensity_complex_{energy}eV", "w") as f:
         for i in range(n_modes):
-            rep = representations[i] if representations else ""
-            f.write(f"{freq_cm1[i]:12.3f} {intensities[i]:18.4f}   {rep}\n")
+            f.write(f"{freq_cm1[i]:12.3f} {intensities[i]:18.4f}\n")
     
-    # 3. Averaged intensity file
-    with open("Raman_intensity_averaged.dat", "w") as f:
-        f.write("# Freq(cm-1)   Intensity(arb.)   Irrep.\n")
+    with open(f"Raman_intensity_polarization_averaged_{energy}eV", "w") as f:
         for i in range(n_modes):
-            rep = representations[i] if representations else ""
-            f.write(f"{freq_cm1[i]:12.3f} {avg_intensities[i]:18.4f}   {rep}\n")
+            f.write(f"{freq_cm1[i]:12.3f} {avg_intensities[i]:18.4f}\n")
             
     print("\ncalculate_spectrum.py finished successfully.")
-    print("Generated Raman_tensor.dat, Raman_intensity_specific.dat, and Raman_intensity_averaged.dat")
-    print("You can now plot the .dat files to see the spectrum.")
+    print(f"Generated Raman_tensor and intensity files for {energy} eV.")
+
+
+def run_raman_tensors_for_input(input_path="input"):
+    """Generate Raman results for every laser energy requested in ``input``."""
+    from calculate_dielectric_derivatives import read_laser_energies
+
+    for energy in read_laser_energies(input_path):
+        derivative_path = f"epsilon_derivative_{energy:.2f}"
+        if not os.path.isfile(derivative_path):
+            raise FileNotFoundError(f"Missing {derivative_path}; run `spectropy derivatives` first")
+        run_raman_tensor(derivative_path)
 
 if __name__ == "__main__":
-    run_raman_tensor()
+    run_raman_tensors_for_input()
