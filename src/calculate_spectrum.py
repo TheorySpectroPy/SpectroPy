@@ -1,54 +1,28 @@
 import numpy as np
 import os
 import sys
-import yaml
-import re
-
-_SETTINGS_KEY_RE = re.compile(
-    r"^(laser_energies?|broadening_fwhm|broadening_type|displacement_amplitude|polarization)\s*(?::|=)",
-    re.I,
-)
+from spectropy_config import Settings, read_settings, write_settings
+from spectropy_phonons import read_gamma_modes, read_irreps as _read_irreps
 
 
 def read_polarization_mode(input_path="input"):
-    """
-    Read ``polarization`` from ``input``: ``average`` requests the
-    orientation-averaged (powder) intensity in addition to the specific
-    incident/scattered geometry; anything else (the default, "specific")
-    means only the specific-polarization intensity is computed -- averaging
-    is never done unless explicitly asked for.
-    """
-    if not os.path.exists(input_path):
-        return "specific"
-    with open(input_path) as handle:
-        for raw_line in handle:
-            line = raw_line.split("!", 1)[0].split("#", 1)[0].strip()
-            match = re.match(r"^polarization\s*(?::|=)\s*(.+)$", line, re.I)
-            if match:
-                value = match.group(1).strip().lower()
-                if value not in ("average", "specific"):
-                    raise ValueError(
-                        f"polarization must be 'average' or 'specific', got: {raw_line.rstrip()}"
-                    )
-                return value
-    return "specific"
+    return read_settings(input_path).polarization
 
 
 def get_user_input():
     """Gets polarization vectors from 'input' file or user prompt."""
     if os.path.exists("input"):
         print("Reading experimental geometry from 'input' file...")
-        settings = []
-        with open("input") as handle:
-            for raw_line in handle:
-                line = raw_line.split("!", 1)[0].split("#", 1)[0].strip()
-                if line and not _SETTINGS_KEY_RE.match(line):
-                    settings.append(line.split())
-        if len(settings) < 3:
+        settings = read_settings("input")
+        if (
+            settings.incident_polarization is None
+            or settings.scattered_polarization is None
+            or settings.surface_normal is None
+        ):
             raise ValueError("input needs incident/scattered polarizations and a surface normal")
-        pol_incident = np.array(settings[0][:3], dtype=float)
-        pol_scattered = np.array(settings[1][:3], dtype=float)
-        axis = settings[2][0].lower()
+        pol_incident = np.array(settings.incident_polarization)
+        pol_scattered = np.array(settings.scattered_polarization)
+        axis = settings.surface_normal
     else:
         print("Please define the experimental geometry.")
         pol_incident_str = input("Enter polarization of incident light (e.g., 1.0 0.0 0.0): ")
@@ -58,66 +32,14 @@ def get_user_input():
         pol_incident = np.array(pol_incident_str.split(), dtype=float)
         pol_scattered = np.array(pol_scattered_str.split(), dtype=float)
 
-        with open("input", "w") as f:
-            f.write(f"{pol_incident[0]:4.1f} {pol_incident[1]:4.1f} {pol_incident[2]:4.1f}   ! Incident polarization\n")
-            f.write(f"{pol_scattered[0]:4.1f} {pol_scattered[1]:4.1f} {pol_scattered[2]:4.1f}   ! Scattered polarization\n")
-            f.write(f"{axis} 0.0 0.0      ! Surface normal\n")
-            f.write("laser_energies: 0.00 ! eV\n")
-            f.write("broadening_fwhm: 1.0 ! cm-1\n")
-            f.write("broadening_type: lorentzian\n")
-            f.write("polarization: specific ! 'average' to also compute the orientation-averaged intensity\n")
+        write_settings("input", Settings(tuple(pol_incident), tuple(pol_scattered), axis))
 
     return pol_incident, pol_scattered, axis
 
 def read_band_yaml(filepath="band.yaml"):
-    """Parses a Phonopy band.yaml file to get phonon modes."""
     print(f"Reading phonon modes from {filepath}...")
-    with open(filepath, 'r') as f:
-        data = yaml.safe_load(f)
-    
-    total_atoms = data['natom']
-    n_modes = total_atoms * 3
-    
-    # Assumes Gamma point calculation is the first entry in the 'phonon' list
-    phonons = data['phonon'][0]['band'] 
-    
-    frequencies = np.array([p['frequency'] for p in phonons])
-    eigenvectors_raw = np.array([p['eigenvector'] for p in phonons])
-    
-    masses = np.array([atom['mass'] for atom in data['points']])
-
-    # Eigenvectors are complex, take the real part and reshape
-    eigenvectors = eigenvectors_raw[:, :, :, 0].reshape(n_modes, n_modes)
-    
-    # Normalize by mass to get eigendisplacements
-    masses_expanded = np.repeat(masses, 3) 
-    eigendisplacements = eigenvectors / np.sqrt(masses_expanded)
-    eigendisplacements = eigendisplacements.reshape(n_modes, total_atoms, 3)
-    
-    return frequencies, eigendisplacements, masses, total_atoms
-
-
-def read_dielectric_derivatives(filepath, total_atoms):
-    """Parses the dielectric_derivatives to get the atomic Raman tensors (derivatives)."""
-    print(f"Reading atomic Raman tensors from {filepath}...")
-    with open(filepath, 'r') as f:
-        lines = f.readlines()
-        
-    real_start_idx = -1
-    imag_start_idx = -1
-    for i, line in enumerate(lines):
-        if "! The Real Part of Raman tensor:" in line:
-            real_start_idx = i + 1
-        if "! The Imaginary Part of Raman tensor:" in line:
-            imag_start_idx = i + 1
-
-    # Helper to check if a string can be a float
-    def is_float(s):
-        try:
-            float(s)
-            return True
-        except ValueError:
-            return False
+    modes = read_gamma_modes(filepath)
+    return modes.frequencies_thz, modes.eigendisplacements, modes.masses, modes.natoms
 
 def read_dielectric_derivatives(filepath, total_atoms):
     """Parses the dielectric_derivatives to get the atomic Raman tensors (derivatives)."""
@@ -203,18 +125,10 @@ def read_dielectric_derivatives(filepath, total_atoms):
     return eps_der_real, eps_der_imag
 
 def read_irreps(filepath="irreps.yaml"):
-    """Reads irreducible representations from Phonopy's irreps.yaml."""
-    if not os.path.exists(filepath):
-        return None
-    print(f"Reading irreducible representations from {filepath}...")
-    with open(filepath, 'r') as f:
-        data = yaml.safe_load(f)
-    
-    reps = {}
-    for mode in data['normal_modes']:
-        for band_index in mode['band_indices']:
-            reps[band_index] = mode['ir_label']
-    return [reps.get(i + 1, '---') for i in range(len(reps))]
+    labels = _read_irreps(filepath)
+    if labels is not None:
+        print(f"Reading irreducible representations from {filepath}...")
+    return labels
     
 def run_raman_tensor(dielectric_derivatives_path=None):
     """Main function to synthesize all data and calculate final intensities."""

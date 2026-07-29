@@ -82,19 +82,17 @@ spectropy displacements --mode minimal --workdir /path/to/calculation
 | `spectropy spectrum` | Combine `band.yaml` and derivatives into Raman tensors and intensities. |
 | `spectropy plot` | Interactively broaden and plot generated Raman intensities. |
 
-The CLI intentionally preserves the scripts' current interactive prompts and
-input/output file conventions. The original scripts can still be run directly,
-which is useful for options not yet forwarded by the CLI, for example:
+The CLI uses the same input/output conventions as the Python API. The optional
+phonon-mode visualization helper remains available directly:
 
 ```bash
-python generate_minimal_displacements.py --amplitude 0.03 --template-dir inputs
-python visualize_modes.py
+python src/visualize_modes.py
 ```
 
 ## Raman workflow
 
 The following workflow starts from a relaxed crystal structure. The
-[`MoS2_Tutorial`](MoS2_Tutorial/README.md) directory provides an example.
+[`examples/MoS2_Tutorial`](examples/MoS2_Tutorial/README.md) directory provides an example.
 
 ### 1. Prepare a calculation directory
 
@@ -121,22 +119,12 @@ spectropy displacements --mode atoms
 spectropy displacements --mode minimal
 ```
 
-The full mode writes `ref_poscar.vasp`, `displacements.dat`, and the
-pipeline-compatible `atomic_displacement`, creates
-`pos_atom*` files and `ra_pos_atom*` directories with `POSCAR`. SpectroPy
-does not link or create DFT input files; add the inputs required by your own
-DFT code to each directory.
-
-The minimal-displacement route directly creates `ra_pos_atom*` directories,
-each containing a displaced `POSCAR`, and writes compatible
-`ref_poscar.vasp` and `displacements.dat` files. Pass `--template-dir` to its
-Python script if those directories should receive copies of VASP input files.
-
-The `atoms` mode is the intermediate option used by the Raman pipeline's
-symmetry displacement generator: it retains all six `+/-x`, `+/-y`, `+/-z`
-finite differences but generates them only for symmetry-inequivalent atoms.
-It requires Phonopy's YAML `symmetry` file and reconstructs the remaining
-atoms during the derivative stage.
+Every mode writes `ref_poscar.vasp`, `displacements.dat`, and the
+pipeline-compatible `atomic_displacement`, then creates `pos_atom*` and
+`ra_pos_atom*/POSCAR` outputs. SpectroPy does not link or create DFT input
+files; add the inputs required by your own DFT code to each directory. The
+`atoms` mode requires Phonopy's YAML `symmetry` file and reconstructs the
+remaining atoms during the derivative stage.
 
 ### 3. Run DFT calculations
 

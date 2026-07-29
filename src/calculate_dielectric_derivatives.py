@@ -2,7 +2,6 @@ import numpy as np
 import os
 import sys
 import shutil
-import re
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 
@@ -17,6 +16,8 @@ from reconstruct_dielectric_derivatives import (
     compute_atom_tensor,
     expand_to_equivalent_atoms,
 )
+from spectropy_config import read_settings
+from spectropy_displacements import read_displacements, suffixes as displacement_suffixes
 
 
 def read_diel_from_xml(xml_path, target_frequency):
@@ -69,31 +70,16 @@ def read_diel_from_xml(xml_path, target_frequency):
 
 
 def read_laser_energies(input_path="input"):
-    """Read ``laser_energies`` from input, defaulting to the 0.00 eV limit."""
-    if not os.path.exists(input_path):
-        return [0.0]
-    with open(input_path) as handle:
-        for raw_line in handle:
-            line = raw_line.split("!", 1)[0].split("#", 1)[0].strip()
-            match = re.match(r"^laser_energies?\s*(?::|=|\s)\s*(.+)$", line, re.I)
-            if match:
-                try:
-                    energies = [float(value) for value in match.group(1).replace(",", " ").split()]
-                except ValueError as error:
-                    raise ValueError(f"Invalid laser_energies line: {raw_line.rstrip()}") from error
-                if not energies:
-                    raise ValueError("laser_energies must contain at least one value")
-                return list(dict.fromkeys(energies))
-    return [0.0]
+    return list(read_settings(input_path).laser_energies)
 
 
 def run_generate_derivatives(target_frequency):
     """
     Collects VASP outputs and computes each atom's full dielectric-derivative
     tensor D_ijk, supporting a VARIABLE number of displacements per atom (not
-    the fixed 6-per-atom the previous version of this script assumed) --
-    generate_minimal_displacements.py's phonopy-driven set can have as few
-    as 2 displacements for a highly-symmetric atom. Missing +/- pairs and
+    the fixed 6-per-atom the previous version of this script assumed) -- a
+    Phonopy-driven set can have as few as 2 displacements for a highly-symmetric
+    atom. Missing +/- pairs and
     entirely-skipped Cartesian axes are reconstructed via this atom's own
     site symmetry (compute_atom_tensor), and symmetry-equivalent atoms not
     displaced at all (e.g. MoS2's second S atom) are filled in via
@@ -108,32 +94,16 @@ def run_generate_derivatives(target_frequency):
             sys.exit(1)
 
     print("Reading displacements.dat to determine which files to collect...")
-    with open("displacements.dat", 'r') as f:
-        displacements_lines = f.readlines()
-    num_disps = int(displacements_lines[1].split()[0])
-
-    displacements = []
-    for line in displacements_lines[2: 2 + num_disps]:
-        parts = line.split()
-        displacements.append({
-            'label': parts[0],
-            'index': int(parts[1]),
-            'vector': np.array(list(map(float, parts[2:5]))),
-        })
+    displacements = read_displacements("displacements.dat")
 
     print("Collecting vasprun.xml files...")
     os.makedirs("vasprun", exist_ok=True)
 
-    alphabet = "abcdefghijklmnopqrstuvwxyz"
-    disp_counter = defaultdict(int)
-    suffixes = []
-    for d in displacements:
-        suffixes.append(alphabet[disp_counter[d['label']]])
-        disp_counter[d['label']] += 1
+    suffixes = displacement_suffixes(displacements)
 
     for disp_data, suffix in zip(displacements, suffixes):
-        label = disp_data['label']
-        source_dir_name = f"ra_pos_atom{disp_data['index']}{suffix}"
+        label = disp_data.label
+        source_dir_name = f"ra_pos_atom{disp_data.atom_index}{suffix}"
         source_path = os.path.join(source_dir_name, "vasprun.xml")
         # Accept pre-existing directories from the earlier Python layout too.
         if not os.path.exists(source_path):
@@ -179,7 +149,7 @@ def run_generate_derivatives(target_frequency):
         )
 
         for disp_data, suffix in zip(displacements, suffixes):
-            label = disp_data['label']
+            label = disp_data.label
             xml_filename = f"{label}{suffix}.xml"
             xml_path = os.path.join("vasprun", xml_filename)
 
@@ -187,12 +157,12 @@ def run_generate_derivatives(target_frequency):
             if eps_real is None:
                 sys.exit(1)
 
-            cart_disp_vec = disp_data['vector'] @ lattice_vectors
-            per_atom_raw[disp_data['index']].append((cart_disp_vec, eps_real, eps_imag))
+            cart_disp_vec = disp_data.fractional_vector @ lattice_vectors
+            per_atom_raw[disp_data.atom_index].append((cart_disp_vec, eps_real, eps_imag))
 
-            pos_str = " ".join(f"{p:9.6f}" for p in positions[disp_data['index'] - 1])
+            pos_str = " ".join(f"{p:9.6f}" for p in positions[disp_data.atom_index - 1])
             disp_str = " ".join(f"{d:9.6f}" for d in cart_disp_vec)
-            f_log.write(f" atom{disp_data['index']} {pos_str} {disp_str}\n")
+            f_log.write(f" atom{disp_data.atom_index} {pos_str} {disp_str}\n")
             for j in range(3):
                 f_log.write("".join(f" {real:12.7f} {imag:12.7f}" for real, imag in zip(eps_real[j], eps_imag[j])) + "\n")
 

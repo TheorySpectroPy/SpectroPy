@@ -5,6 +5,7 @@ import os
 import sys
 import re
 import shutil
+from spectropy_config import read_settings
 
 # --- 1. Publication-Style Configuration ---
 # rc('text', usetex=True) never raises by itself -- it just sets a param;
@@ -84,34 +85,8 @@ def format_mode_for_latex(mode_str):
 
 
 def read_broadening_settings(input_path="input"):
-    """Read plot broadening settings from ``input``.
-
-    ``broadening_fwhm`` is in cm^-1 and defaults to 1.0.  ``broadening_type``
-    accepts ``lorentzian``/``l`` (the default) or ``gaussian``/``g``.
-    """
-    fwhm = 1.0
-    broadening_type = "l"
-    if not os.path.isfile(input_path):
-        return fwhm, broadening_type
-
-    with open(input_path) as handle:
-        for raw_line in handle:
-            line = raw_line.split("!", 1)[0].split("#", 1)[0].strip()
-            match = re.match(r"^broadening_fwhm\s*(?::|=|\s)\s*(.+)$", line, re.I)
-            if match:
-                try:
-                    fwhm = float(match.group(1).split()[0])
-                except ValueError as error:
-                    raise ValueError(f"Invalid broadening_fwhm line: {raw_line.rstrip()}") from error
-                if fwhm <= 0:
-                    raise ValueError("broadening_fwhm must be positive")
-            match = re.match(r"^broadening_type\s*(?::|=|\s)\s*(.+)$", line, re.I)
-            if match:
-                value = match.group(1).strip().lower()
-                broadening_type = {"lorentzian": "l", "l": "l", "gaussian": "g", "g": "g"}.get(value, "")
-                if not broadening_type:
-                    raise ValueError("broadening_type must be lorentzian or gaussian")
-    return fwhm, broadening_type
+    settings = read_settings(input_path)
+    return settings.broadening_fwhm, "g" if settings.broadening_type == "gaussian" else "l"
 
 # --- 3. The Plotting Core ---
 
