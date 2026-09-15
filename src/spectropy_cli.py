@@ -1,5 +1,3 @@
-"""Command-line interface for SpectroPy's existing calculation stages."""
-
 from __future__ import annotations
 
 import argparse
@@ -9,7 +7,6 @@ from collections.abc import Callable
 
 
 def _run_in_directory(workdir: str, operation: Callable[[], None]) -> None:
-    """Run an existing stage in *workdir*, restoring the caller's CWD."""
     previous = os.getcwd()
     try:
         os.chdir(workdir)
@@ -19,18 +16,13 @@ def _run_in_directory(workdir: str, operation: Callable[[], None]) -> None:
 
 
 def _commands(mode: str) -> dict[str, tuple[str, Callable[[], None]]]:
-    """Return the available CLI stages without importing their dependencies."""
     def stage(module: str, function: str) -> Callable[[], None]:
         def run() -> None:
             getattr(importlib.import_module(module), function)()
         return run
 
     def derivatives() -> None:
-        getattr(importlib.import_module("process_symmetry"), "run_mapping")()
-        getattr(
-            importlib.import_module("calculate_dielectric_derivatives"),
-            "run_generate_derivatives_for_input",
-        )()
+        getattr(importlib.import_module("spectropy_derivatives"), "run_derivatives")()
 
     def spectrum() -> None:
         getattr(importlib.import_module("calculate_spectrum"), "run_raman_tensors_for_input")()
@@ -52,6 +44,10 @@ def _commands(mode: str) -> dict[str, tuple[str, Callable[[], None]]]:
         "derivatives": (
             "Process symmetry and evaluate derivatives at every laser energy in input.",
             derivatives,
+        ),
+        "symmetry": (
+            "Write the symmetry operations that map equivalent atoms.",
+            stage("process_symmetry", "run_mapping"),
         ),
         "spectrum": (
             "Build Raman tensors and intensities for every laser energy in input.",
@@ -95,7 +91,8 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     for name, help_text in (
-        ("derivatives", "Process symmetry and calculate dielectric derivatives."),
+        ("symmetry", "Write atom-to-atom symmetry-operation matrices."),
+        ("derivatives", "Calculate dielectric derivatives."),
         ("spectrum", "Build Raman tensors and intensities from derivatives."),
         ("plot", "Broaden and plot Raman intensities."),
     ):
@@ -114,5 +111,5 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     raise SystemExit(main())

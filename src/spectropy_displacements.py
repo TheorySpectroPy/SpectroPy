@@ -14,9 +14,13 @@ from spectropy_structure import Structure, read_structure, write_structure
 
 @dataclass(frozen=True)
 class Displacement:
-    label: str
     atom_index: int
     fractional_vector: np.ndarray
+    suffix: str
+
+    @property
+    def name(self) -> str:
+        return f"atom{self.atom_index}{self.suffix}"
 
 
 def atom_labels(symbols: list[str]) -> list[str]:
@@ -33,53 +37,61 @@ def read_displacements(path: str | Path = "displacements.dat") -> list[Displacem
     if len(lines) < 2:
         raise ValueError(f"Incomplete displacement file: {path}")
     count = int(lines[1].split()[0])
-    records: list[Displacement] = []
+    displacements: list[Displacement] = []
+    counters: dict[int, int] = defaultdict(int)
     for line in lines[2:2 + count]:
         values = line.split()
         if len(values) < 5:
             raise ValueError(f"Invalid displacement record: {line}")
-        records.append(Displacement(values[0], int(values[1]), np.array(values[2:5], dtype=float)))
-    if len(records) != count:
-        raise ValueError(f"Expected {count} displacement records in {path}")
-    return records
+        atom_index = int(values[1])
+        suffix_index = counters[atom_index]
+        if suffix_index >= len(ascii_lowercase):
+            raise ValueError(f"Too many displacements for atom {atom_index}")
+        displacements.append(Displacement(atom_index, np.array(values[2:5], dtype=float), ascii_lowercase[suffix_index]))
+        counters[atom_index] += 1
+    if len(displacements) != count:
+        raise ValueError(f"Expected {count} displacements in {path}")
+    return displacements
+
+
+def read_displacement_mode(path: str | Path = "displacements.dat") -> str:
+    header = Path(path).read_text().splitlines()[0].lower()
+    if "site-symmetry-minimal" in header:
+        return "minimal"
+    if "symmetry-inequivalent" in header:
+        return "atoms"
+    if header == "displacements for vasp. system":
+        return "full"
+    raise ValueError(f"Cannot determine displacement mode from {path}")
 
 
 def write_displacements(
     path: str | Path,
-    records: list[Displacement],
-    total_atoms: int,
+    displacements: list[Displacement],
+    structure: Structure,
     header: str = "displacements for VASP. System",
 ) -> None:
-    unique_atoms = list(dict.fromkeys((record.label, record.atom_index) for record in records))
+    labels = atom_labels(structure.atom_symbols)
+    unique_atoms = list(dict.fromkeys(displacement.atom_index for displacement in displacements))
     with open(path, "w") as output:
         output.write(f"{header}\n")
-        output.write(f"{len(records):6d}   Number of displacements\n")
-        for record in records:
-            vector = record.fractional_vector
+        output.write(f"{len(displacements):6d}   Number of displacements\n")
+        for displacement in displacements:
+            vector = displacement.fractional_vector
+            label = labels[displacement.atom_index - 1]
             output.write(
-                f"{record.label:<5s}{record.atom_index:6d}"
+                f"{label:<5s}{displacement.atom_index:6d}"
                 f"{vector[0]:12.6f}{vector[1]:12.6f}{vector[2]:12.6f}\n"
             )
-        output.write(f"{len(unique_atoms):6d}{total_atoms:6d}     Number of atoms in SC\n")
-        for label, atom_index in unique_atoms:
+        output.write(f"{len(unique_atoms):6d}{structure.natoms:6d}     Number of atoms in SC\n")
+        for atom_index in unique_atoms:
+            label = labels[atom_index - 1]
             output.write(f"{label:<5s}{atom_index:6d}\n")
 
 
-def suffixes(records: list[Displacement]) -> list[str]:
-    counters: dict[str, int] = defaultdict(int)
-    result: list[str] = []
-    for record in records:
-        index = counters[record.label]
-        if index >= len(ascii_lowercase):
-            raise ValueError(f"Too many displacements for {record.label}")
-        result.append(ascii_lowercase[index])
-        counters[record.label] += 1
-    return result
-
-
-def _amplitude(input_path: str | Path, mode: str) -> float:
+def _amplitude(input_path: str | Path) -> float:
     value = read_settings(input_path).displacement_amplitude
-    return value if value is not None else (0.03 if mode == "minimal" else 0.01)
+    return value if value is not None else 0.03
 
 
 def _cartesian_vectors(amplitude: float) -> np.ndarray:
@@ -90,20 +102,16 @@ def _cartesian_vectors(amplitude: float) -> np.ndarray:
     ])
 
 
-def _representatives(path: str | Path, total_atoms: int) -> list[int]:
+def _representatives(path: str | Path) -> list[int]:
     data = yaml.safe_load(Path(path).read_text()) or {}
     mapping = data.get("atom_mapping")
     if not isinstance(mapping, dict) or not mapping:
         raise ValueError(f"{path} does not contain Phonopy atom_mapping data")
     representatives = sorted({int(value) for value in mapping.values()})
-    if 0 in representatives:
-        representatives = [index + 1 for index in representatives]
-    if not representatives or min(representatives) < 1 or max(representatives) > total_atoms:
-        raise ValueError("atom_mapping indices do not match the atoms in CONTCAR")
     return representatives
 
 
-def _minimal_records(structure: Structure, labels: list[str], contcar_path: str | Path, amplitude: float) -> list[Displacement]:
+def _minimal_entries(structure: Structure, contcar_path: str | Path, amplitude: float) -> list[tuple[int, np.ndarray]]:
     from phonopy import Phonopy
     from phonopy.interface.vasp import read_vasp
 
@@ -115,37 +123,47 @@ def _minimal_records(structure: Structure, labels: list[str], contcar_path: str 
     phonopy.generate_displacements(distance=amplitude, is_diagonal=False)
     inverse_lattice = np.linalg.inv(structure.lattice)
     return [
-        Displacement(
-            labels[int(entry["number"])],
+        (
             int(entry["number"]) + 1,
             np.asarray(entry["displacement"]) @ inverse_lattice,
         )
         for entry in phonopy.dataset["first_atoms"]
     ]
 
-
-def generate_records(
+# Generate displaced coordinates and make displaced structures
+def generate_displacements(
     mode: str,
     structure: Structure,
     contcar_path: str | Path,
     symmetry_path: str | Path,
     amplitude: float,
 ) -> list[Displacement]:
-    labels = atom_labels(structure.atom_symbols)
     if mode == "minimal":
-        return _minimal_records(structure, labels, contcar_path, amplitude)
-    if mode == "full":
-        atoms = range(1, structure.natoms + 1)
-    elif mode == "atoms":
-        atoms = _representatives(symmetry_path, structure.natoms)
+        entries = _minimal_entries(structure, contcar_path, amplitude)
     else:
-        raise ValueError(f"Unknown displacement mode: {mode}")
-    fractional_vectors = _cartesian_vectors(amplitude) @ np.linalg.inv(structure.lattice)
-    return [
-        Displacement(labels[atom_index - 1], atom_index, vector)
-        for atom_index in atoms
-        for vector in fractional_vectors
-    ]
+        # Determine which set of atoms to generate replacements for
+        if mode == "full":
+            atoms = range(1, structure.natoms + 1)
+        elif mode == "atoms":
+            atoms = _representatives(symmetry_path)
+        else:
+            raise ValueError(f"Unknown displacement mode: {mode}")
+        fractional_vectors = _cartesian_vectors(amplitude) @ np.linalg.inv(structure.lattice)
+        entries = [
+            (atom_index, vector)
+            for atom_index in atoms
+            for vector in fractional_vectors
+        ]
+
+    counters: dict[int, int] = defaultdict(int)
+    displacements = []
+    for atom_index, vector in entries:
+        suffix_index = counters[atom_index]
+        if suffix_index >= len(ascii_lowercase):
+            raise ValueError(f"Too many displacements for atom {atom_index}")
+        displacements.append(Displacement(atom_index, vector, ascii_lowercase[suffix_index]))
+        counters[atom_index] += 1
+    return displacements
 
 
 def _header(mode: str) -> str:
@@ -155,9 +173,9 @@ def _header(mode: str) -> str:
         return "displacements for VASP. Symmetry-inequivalent atoms"
     return "displacements for VASP. System"
 
-
-def write_atomic_displacements(path: str | Path, records: list[Displacement], amplitude: float) -> None:
-    atoms = list(dict.fromkeys(record.atom_index for record in records))
+# Write displacements to files
+def write_atomic_displacements(path: str | Path, displacements: list[Displacement], amplitude: float) -> None:
+    atoms = list(dict.fromkeys(displacement.atom_index for displacement in displacements))
     with open(path, "w") as output:
         output.write(
             f"Atomic displacements are {amplitude:6.3f} {amplitude:6.3f} "
@@ -166,26 +184,26 @@ def write_atomic_displacements(path: str | Path, records: list[Displacement], am
         output.write(f"{len(atoms):6d} number of atoms with displacements, and atom symbols and indices shown below\n")
         for atom_index in atoms:
             output.write(f"atom{atom_index:<5d}{atom_index:6d}\n")
-        output.write(f"\n{len(records):6d} number of displacements in fractional coordinates\n")
-        for record in records:
-            vector = record.fractional_vector
+        output.write(f"\n{len(displacements):6d} number of displacements in fractional coordinates\n")
+        for displacement in displacements:
+            vector = displacement.fractional_vector
             output.write(
-                f"atom{record.atom_index:<5d}{record.atom_index:6d}"
+                f"atom{displacement.atom_index:<5d}{displacement.atom_index:6d}"
                 f"{vector[0]:12.6f}{vector[1]:12.6f}{vector[2]:12.6f}\n"
             )
 
 
-def write_calculation_directories(records: list[Displacement], structure: Structure) -> None:
-    for record, suffix in zip(records, suffixes(records)):
-        filename = f"pos_atom{record.atom_index}{suffix}"
+def write_calculation_directories(displacements: list[Displacement], structure: Structure) -> None:
+    for displacement in displacements:
+        filename = f"pos_{displacement.name}"
         positions = structure.fractional_positions.copy()
-        positions[record.atom_index - 1] += record.fractional_vector
+        positions[displacement.atom_index - 1] += displacement.fractional_vector
         write_structure(filename, structure, positions)
         directory = f"ra_{filename}"
         os.makedirs(directory, exist_ok=True)
         write_structure(Path(directory) / "POSCAR", structure, positions)
 
-
+# Main command chain for creating the displacement files
 def run_displacements(
     mode: str = "full",
     contcar_path: str | Path = "CONTCAR",
@@ -195,12 +213,12 @@ def run_displacements(
     if mode not in {"full", "atoms", "minimal"}:
         raise ValueError("mode must be full, atoms, or minimal")
     structure = read_structure(contcar_path)
-    amplitude = _amplitude(input_path, mode)
-    records = generate_records(mode, structure, contcar_path, symmetry_path, amplitude)
+    amplitude = _amplitude(input_path)
+    displacements = generate_displacements(mode, structure, contcar_path, symmetry_path, amplitude)
     write_structure("ref_poscar.vasp", structure)
-    write_displacements("displacements.dat", records, structure.natoms, _header(mode))
-    write_atomic_displacements("atomic_displacement", records, amplitude)
-    write_calculation_directories(records, structure)
-    print(f"Generated {len(records)} {mode} displacement(s).")
+    write_displacements("displacements.dat", displacements, structure, _header(mode))
+    write_atomic_displacements("atomic_displacement", displacements, amplitude)
+    write_calculation_directories(displacements, structure)
+    print(f"Generated {len(displacements)} {mode} displacement(s).")
     print("Wrote ref_poscar.vasp, displacements.dat, atomic_displacement, pos_atom*, and ra_pos_atom*/POSCAR.")
-    return records
+    return displacements

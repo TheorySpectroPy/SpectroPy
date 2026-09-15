@@ -95,7 +95,7 @@ Gamma-point Phonopy calculation.
 
 ### 1. Create a Phonopy symmetry file
 
-The derivative stage requires Phonopy's YAML symmetry output:
+The `atoms` and `minimal` derivative stages require Phonopy's YAML symmetry output:
 
 ```bash
 phonopy --symmetry -c CONTCAR > symmetry

@@ -18,6 +18,7 @@ class Settings:
     broadening_fwhm: float = 1.0
     broadening_type: str = "lorentzian"
     polarization: str = "specific"
+    frequency_cutoff_cm1: float | None = None
 
 
 def _content_lines(path: Path) -> list[str]:
@@ -35,7 +36,8 @@ def read_settings(path: str | Path = "input") -> Settings:
         match = _SETTING_RE.match(line)
         if match and match.group(1).lower() in {
             "laser_energy", "laser_energies", "displacement_amplitude",
-            "broadening_fwhm", "broadening_type", "polarization",
+            "broadening_fwhm", "broadening_type", "polarization", "cutoff",
+            "frequency_cutoff",
         }:
             values[match.group(1).lower()] = match.group(2)
         else:
@@ -45,7 +47,7 @@ def read_settings(path: str | Path = "input") -> Settings:
         if len(geometry) <= index:
             return None
         try:
-            return tuple(float(value) for value in geometry[index][:3])  # type: ignore[return-value]
+            return tuple(float(value) for value in geometry[index][:3])
         except ValueError as error:
             raise ValueError("The first two input lines must be three-component polarization vectors") from error
 
@@ -85,9 +87,20 @@ def read_settings(path: str | Path = "input") -> Settings:
     if polarization not in {"specific", "average"}:
         raise ValueError("polarization must be specific or average")
 
+    cutoff = values.get("cutoff", values.get("frequency_cutoff"))
+    if cutoff is not None:
+        try:
+            frequency_cutoff_cm1 = float(cutoff.split()[0])
+        except ValueError as error:
+            raise ValueError("cutoff must be numeric") from error
+        if frequency_cutoff_cm1 < 0:
+            raise ValueError("cutoff must be non-negative")
+    else:
+        frequency_cutoff_cm1 = None
+
     return Settings(
         vector(0), vector(1), geometry[2][0].lower() if len(geometry) >= 3 else None,
-        energies, displacement_amplitude, fwhm, broadening_type, polarization,
+        energies, displacement_amplitude, fwhm, broadening_type, polarization, frequency_cutoff_cm1,
     )
 
 
@@ -102,6 +115,8 @@ def write_settings(path: str | Path, settings: Settings) -> None:
     ]
     if settings.displacement_amplitude is not None:
         lines.append(f"displacement_amplitude: {settings.displacement_amplitude:g}")
+    if settings.frequency_cutoff_cm1 is not None:
+        lines.append(f"cutoff: {settings.frequency_cutoff_cm1:g}")
     lines.extend([
         f"polarization: {settings.polarization}",
         f"broadening_fwhm: {settings.broadening_fwhm:g}",
