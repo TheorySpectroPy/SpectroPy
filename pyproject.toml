@@ -42,6 +42,7 @@ py-modules = [
     "reconstruct_dielectric_derivatives",
     "spectropy_cli",
     "spectropy_config",
+    "spectropy_derivatives",
     "spectropy_displacements",
     "spectropy_phonons",
     "spectropy_structure",

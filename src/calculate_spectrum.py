@@ -10,7 +10,6 @@ def read_polarization_mode(input_path="input"):
 
 
 def get_user_input():
-    """Gets polarization vectors from 'input' file or user prompt."""
     if os.path.exists("input"):
         print("Reading experimental geometry from 'input' file...")
         settings = read_settings("input")
@@ -39,10 +38,9 @@ def get_user_input():
 def read_band_yaml(filepath="band.yaml"):
     print(f"Reading phonon modes from {filepath}...")
     modes = read_gamma_modes(filepath)
-    return modes.frequencies_thz, modes.eigendisplacements, modes.masses, modes.natoms
+    return modes.frequencies_thz, modes.eigendisplacements, modes.natoms
 
 def read_dielectric_derivatives(filepath, total_atoms):
-    """Parses the dielectric_derivatives to get the atomic Raman tensors (derivatives)."""
     print(f"Reading atomic Raman tensors from {filepath}...")
     with open(filepath, 'r') as f:
         lines = f.readlines()
@@ -74,48 +72,38 @@ def read_dielectric_derivatives(filepath, total_atoms):
             line = block_lines[line_idx]
 
             if end_pattern and end_pattern in line:
-                break # Stop parsing when we hit the end pattern
+                break
             
             parts = line.split()
             
-            # Check if line is a potential atom header: not empty, not a comment, starts with non-number
             if parts and "!" not in line and not is_float(parts[0]):
                 atom_counter += 1
                 atom_idx = atom_counter
                 
-                # The next 3 lines are the 3x9 tensor data
                 tensor_lines = [block_lines[line_idx+1], block_lines[line_idx+2], block_lines[line_idx+3]]
                 tensor_3x9 = np.array([list(map(float, l.split())) for l in tensor_lines])
                 
-                # Correctly slice the 3x9 matrix into three 3x3 tensors for d/dx, d/dy, d/dz
-                # and stack them along a new first axis (axis=0)
                 tensor_3x3x3 = np.array([
-                    tensor_3x9[:, 0:3], # Derivative w.r.t. X displacement
-                    tensor_3x9[:, 3:6], # Derivative w.r.t. Y displacement
-                    tensor_3x9[:, 6:9]  # Derivative w.r.t. Z displacement
+                    tensor_3x9[:, 0:3],
+                    tensor_3x9[:, 3:6],
+                    tensor_3x9[:, 6:9]
                 ])
 
                 tensors[atom_idx] = tensor_3x3x3
-                line_idx += 3 # Advance index past the data lines we just read
-            
+                line_idx += 3
             line_idx += 1
         return tensors
 
     eps_der_real_dict = parse_tensor_block(real_start_idx, end_pattern="! The Imaginary Part")
     eps_der_imag_dict = parse_tensor_block(imag_start_idx)
     
-    # calculate_dielectric_derivatives.py now always writes data for every
-    # atom (symmetry-equivalent atoms not directly displaced are filled in
-    # via reconstruct_dielectric_derivatives.expand_to_equivalent_atoms
-    # before the file is written), so no separate "symmetry was used, full
-    # reconstruction not implemented" fallback path is needed here anymore.
     missing = [i + 1 for i in range(total_atoms) if (i + 1) not in eps_der_real_dict]
     if missing:
         print(f"***** dielectric_derivatives file is missing atom(s) {missing} -- "
               "was it written by an up-to-date calculate_dielectric_derivatives.py? *****")
         sys.exit(1)
 
-    eps_der_real = np.zeros((total_atoms, 3, 3, 3)) # Shape: (atom, alpha, i, j)
+    eps_der_real = np.zeros((total_atoms, 3, 3, 3))
     eps_der_imag = np.zeros((total_atoms, 3, 3, 3))
 
     for i in range(total_atoms):
@@ -131,9 +119,6 @@ def read_irreps(filepath="irreps.yaml"):
     return labels
     
 def run_raman_tensor(dielectric_derivatives_path=None):
-    """Main function to synthesize all data and calculate final intensities."""
-    # --- Check for required input files ---
-    # Smartly find the dielectric_derivatives based on a pattern
     if dielectric_derivatives_path is None:
         for f in sorted(os.listdir('.')):
             if f.startswith("epsilon_derivative_"):
@@ -143,72 +128,52 @@ def run_raman_tensor(dielectric_derivatives_path=None):
         print("***** epsilon_derivative_<freq> not found. Did you run `spectropy derivatives`? *****")
         sys.exit(1)
 
-    # --- Get Inputs ---
     pol_incident, pol_scattered, axis = get_user_input()
     polarization_mode = read_polarization_mode()
-    frequencies, eigendisps, masses, total_atoms = read_band_yaml()
+    frequencies, eigendisps, total_atoms = read_band_yaml()
     eps_der_real, eps_der_imag = read_dielectric_derivatives(dielectric_derivatives_path, total_atoms)
     representations = read_irreps()
 
     n_modes = total_atoms * 3
 
-    # --- Calculate Mode Raman Tensors ---
     print("Calculating Raman tensors for each mode...")
-    # m: mode, j: atom, a: alpha (xyz), i,k: tensor components
     raman_tensor_real = np.einsum('jaik,mja->mik', eps_der_real, eigendisps)
     raman_tensor_imag = np.einsum('jaik,mja->mik', eps_der_imag, eigendisps)
     raman_tensor_cmplx = raman_tensor_real + 1j * raman_tensor_imag
 
-    # --- Calculate Intensities ---
     print("Calculating Raman intensities...")
-    # Specific polarization geometry
-    # Intensity = | e_s . R_m . e_i |^2
     contracted_tensor = np.einsum('i,mik,k->m', pol_scattered, raman_tensor_cmplx, pol_incident)
     intensities = np.abs(contracted_tensor)**2
 
-    # Polarization-averaged for backscattering -- only computed when
-    # explicitly requested via "polarization: average" in input (see
-    # read_polarization_mode); otherwise only the specific incident/scattered
-    # geometry above is used, and no averaged file is written at all.
     avg_intensities = None
     if polarization_mode == "average":
         if axis == 'z':
             avg_intensities = (np.abs(raman_tensor_cmplx[:, 0, 0])**2 + np.abs(raman_tensor_cmplx[:, 0, 1])**2 +
                                np.abs(raman_tensor_cmplx[:, 1, 0])**2 + np.abs(raman_tensor_cmplx[:, 1, 1])**2)
         elif axis == 'y':
-            # ... similar logic for other axes ...
             avg_intensities = (np.abs(raman_tensor_cmplx[:, 0, 0])**2 + np.abs(raman_tensor_cmplx[:, 0, 2])**2 +
                                np.abs(raman_tensor_cmplx[:, 2, 0])**2 + np.abs(raman_tensor_cmplx[:, 2, 2])**2)
         elif axis == 'x':
             avg_intensities = (np.abs(raman_tensor_cmplx[:, 1, 1])**2 + np.abs(raman_tensor_cmplx[:, 1, 2])**2 +
                                np.abs(raman_tensor_cmplx[:, 2, 1])**2 + np.abs(raman_tensor_cmplx[:, 2, 2])**2)
-        else: # Polycrystalline average
+        else:
             avg_intensities = np.sum(np.abs(raman_tensor_cmplx)**2, axis=(1, 2))
 
-    # Apply temperature correction (Bose-Einstein factor)
-    # h*cm-1/k_B*T at 298K
-    const = 0.004824125
     thz_to_cm1 = 33.35641
     freq_cm1 = frequencies * thz_to_cm1
-    
-    with np.errstate(divide='ignore', invalid='ignore'):
-        occupation = 1.0 / (np.exp(freq_cm1 * const) - 1.0)
-    occupation[~np.isfinite(occupation)] = 0 # Handle div by zero for low freq
-    
-    temp_factor = (occupation + 1.0) / frequencies
-    temp_factor[frequencies < 0.03] = 1.0 # Avoid division by zero for acoustic modes
+    cutoff_cm1 = read_settings().frequency_cutoff_cm1
+    if cutoff_cm1 is not None:
+        selected = (frequencies > 0.0) & (frequencies >= cutoff_cm1 / thz_to_cm1)
+        occupation = 1.0 / (np.exp(freq_cm1[selected] * 0.004824125) - 1.0)
+        factor = (occupation + 1.0) / frequencies[selected]
+        intensities[selected] *= factor
+        if avg_intensities is not None:
+            avg_intensities[selected] *= factor
 
-    intensities *= temp_factor
-    if avg_intensities is not None:
-        avg_intensities *= temp_factor
-
-    # --- Write Output Files ---
     print("Writing final output files...")
     
     energy = dielectric_derivatives_path.removeprefix("epsilon_derivative_")
 
-    # Match the established Raman-workflow filenames: a single Raman_tensor
-    # file plus one two-column intensity file per laser energy.
     with open("Raman_tensor", "w") as f:
         f.write("# Mode   Freq(THz)   Freq(cm-1)   Irrep.   Raman Tensor (Real + i*Imaginary)\n")
         f.write("#--------------------------------------------------------------------------\n")
@@ -234,10 +199,9 @@ def run_raman_tensor(dielectric_derivatives_path=None):
 
 
 def run_raman_tensors_for_input(input_path="input"):
-    """Generate Raman results for every laser energy requested in ``input``."""
-    from calculate_dielectric_derivatives import read_laser_energies
+    from spectropy_config import read_settings
 
-    for energy in read_laser_energies(input_path):
+    for energy in read_settings(input_path).laser_energies:
         derivative_path = f"epsilon_derivative_{energy:.2f}"
         if not os.path.isfile(derivative_path):
             raise FileNotFoundError(f"Missing {derivative_path}; run `spectropy derivatives` first")

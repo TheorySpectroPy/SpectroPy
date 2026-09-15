@@ -23,7 +23,6 @@ def read_band_yaml(filepath="band.yaml"):
 
 
 def write_vmd_script(filename, positions, displacements, l_cylinder, l_cone):
-    """Writes the VMD drawing commands for a single mode."""
     with open(filename, 'w') as f:
         f.write("draw color blue\n")
         for i in range(len(positions)):
@@ -36,10 +35,6 @@ def write_vmd_script(filename, positions, displacements, l_cylinder, l_cone):
             f.write(f"draw cone {{{p2[0]:.6f} {p2[1]:.6f} {p2[2]:.6f}}} {{{p3[0]:.6f} {p3[1]:.6f} {p3[2]:.6f}}} radius 0.2 resolution 30\n")
 
 def write_vesta_file(filename, template_content, displacements, n_atoms, scale_factor, freq_cm1, structure=None):
-    """
-    Writes a new .vesta file by injecting vector data into a template
-    based on a working example.
-    """
     
     insert_pos = -1
     markers = ['SPLAN', 'VECTR', 'VECTT', 'BOUNDS', 'MODGS', 'END']
@@ -79,7 +74,7 @@ def write_vesta_file(filename, template_content, displacements, n_atoms, scale_f
     
     content.append('VECTT')
     for i in range(n_atoms):
-        content.append(f"   {i+1:3d} 0.250 255   0   0 0") # Style: 0.25Å radius, Red
+        content.append(f"   {i+1:3d} 0.250 255   0   0 0")
     content.append(" 0 0 0 0 0")
     
     content.append(footer)
@@ -89,7 +84,6 @@ def write_vesta_file(filename, template_content, displacements, n_atoms, scale_f
     return True
 
 def run_visualization():
-    """Main function to generate visualization scripts for phonon modes."""
     required_files = ["CONTCAR", "band.yaml"]
     for f in required_files:
         if not os.path.exists(f):
@@ -126,14 +120,11 @@ def run_visualization():
             with open(template_name, 'r') as f:
                 vesta_template_content = f.read()
 
-    # Scale factor
     factor *= np.sqrt(np.max(masses))
     thz_to_cm1 = 33.35641
     
-    # VMD arrow scaling
     l_cylinder = 4.0 * factor
     l_cone = 1.5 * factor
-    # VESTA arrow scaling (total length)
     vesta_scale = l_cylinder + l_cone
 
     print("Generating mode visualization files...")

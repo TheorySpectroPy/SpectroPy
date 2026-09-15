@@ -55,12 +55,18 @@ uses `0.00 eV`, the static-limit calculation.
 1.0 0.0 0.0
 z
 laser_energies: 0.00 1.96 2.33
+cutoff: 1.0
 broadening_fwhm: 1.0
 broadening_type: lorentzian
 ```
 
 `broadening_fwhm` is in cm⁻¹ and defaults to `1.0`; `broadening_type`
 defaults to `lorentzian` and may instead be `gaussian`.
+
+`cutoff` is optional and expressed in cm⁻¹. When it is set, modes at or above
+the cutoff receive the 298 K Bose/`1/ω` cross-section factor. When omitted,
+SpectroPy writes raw reduced Raman intensities, matching the legacy Fortran
+default. `frequency_cutoff` is accepted as an equivalent spelling.
 
 ## Command-line interface
 
@@ -78,7 +84,8 @@ spectropy displacements --mode minimal --workdir /path/to/calculation
 | `spectropy displacements --mode full` | Create the full `+/-x`, `+/-y`, `+/-z` set for every atom and VASP-ready directories. |
 | `spectropy displacements --mode atoms` | Create the full `+/-x`, `+/-y`, `+/-z` set for symmetry-inequivalent atoms only. |
 | `spectropy displacements --mode minimal` | Create Phonopy's minimum symmetry-reduced displacement set. |
-| `spectropy derivatives` | Process Phonopy symmetry, then evaluate dielectric derivatives at every laser energy in `input`. |
+| `spectropy symmetry` | Write the symmetry-operation matrices relating equivalent atoms. |
+| `spectropy derivatives` | Evaluate dielectric derivatives at every laser energy in `input`. |
 | `spectropy spectrum` | Combine `band.yaml` and derivatives into Raman tensors and intensities. |
 | `spectropy plot` | Interactively broaden and plot generated Raman intensities. |
 
@@ -100,8 +107,8 @@ Create a directory containing:
 
 1. A relaxed VASP structure named `CONTCAR`.
 2. Phonopy's Gamma-point `band.yaml` and, optionally, `irreps.yaml`.
-3. Phonopy's YAML `symmetry` output when using symmetry-reduced displacements
-   or derivative reconstruction.
+3. Phonopy's YAML `symmetry` output when using `atoms` or `minimal`
+   displacements and their derivative reconstruction.
 4. The DFT inputs to reuse for every displacement: normally `INCAR`,
    `KPOINTS`, and `POTCAR` for VASP.
 
@@ -134,14 +141,13 @@ submission strategy. For the VASP frequency-dependent workflow, each completed
 directory must contain `vasprun.xml` with dielectric-function data at the
 requested laser energy.
 
-### 4. Process symmetry and dielectric derivatives
+### 4. Calculate dielectric derivatives
 
 ```bash
 spectropy derivatives
 ```
 
-This command processes Phonopy's `symmetry` file, then evaluates every
-`laser_energies` value in `input`. It copies
+This command evaluates every `laser_energies` value in `input`. It copies
 `ra_pos_atom*/vasprun.xml` into `vasprun/`, then writes:
 
 - `dielectric_tensor_<frequency>`: dielectric tensor for every displacement.
@@ -150,6 +156,14 @@ This command processes Phonopy's `symmetry` file, then evaluates every
 
 When `laser_energies` is absent, SpectroPy evaluates the default `0.00 eV`
 case. This replaces the separate static-derivative workflow.
+
+For debugging, inspect the operations used to map equivalent atoms with:
+
+```bash
+spectropy symmetry
+```
+
+This writes `symmetry_operation_matrices`.
 
 ### 5. Calculate the Raman spectrum
 
