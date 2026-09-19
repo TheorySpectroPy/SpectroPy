@@ -32,13 +32,28 @@ def broaden_spectrum(freqs, intensities, fwhm, b_type):
     return x_dense, y_dense
 
 
+def read_intensity_file(input_file):
+    frequencies = []
+    intensities = []
+    modes = []
+    with open(input_file) as stream:
+        for line_number, line in enumerate(stream, 1):
+            fields = line.split()
+            if not fields or fields[0].startswith("#"):
+                continue
+            if len(fields) < 2:
+                raise ValueError(f"line {line_number} has fewer than two columns")
+            frequencies.append(float(fields[0]))
+            intensities.append(float(fields[1]))
+            modes.append(fields[2] if len(fields) >= 3 else f"{float(fields[0]):.1f}")
+    return np.asarray(frequencies), np.asarray(intensities), modes
+
+
 def write_broadened_spectrum(input_file, fwhm, b_type):
-    raw_data = np.loadtxt(input_file, dtype=float)
-    if raw_data.size == 0:
+    frequencies, intensities, _ = read_intensity_file(input_file)
+    if frequencies.size == 0:
         return None
-    if raw_data.ndim == 1:
-        raw_data = raw_data.reshape(1, -1)
-    x_dense, y_dense = broaden_spectrum(raw_data[:, 0], raw_data[:, 1], fwhm, b_type)
+    x_dense, y_dense = broaden_spectrum(frequencies, intensities, fwhm, b_type)
 
     basename = os.path.basename(input_file)
     energy = basename.removeprefix("Raman_intensity_complex_")
@@ -74,16 +89,12 @@ def read_broadening_settings(input_path="input"):
 
 def process_and_plot(input_file, fwhm=5.0, b_type='l'):
     try:
-        raw_data = np.loadtxt(input_file, dtype=float)
-        if raw_data.size == 0: return
-        if raw_data.ndim == 1: raw_data = raw_data.reshape(1, -1)
-
-        freqs = raw_data[:, 0]
-        intensities = raw_data[:, 1]
-        modes = [f"{f:.1f}" for f in freqs]
+        freqs, intensities, modes = read_intensity_file(input_file)
+        if freqs.size == 0:
+            return False
     except Exception as e:
         print(f"      Error reading {os.path.basename(input_file)}: {e}")
-        return
+        return False
 
     x_dense, y_dense = broaden_spectrum(freqs, intensities, fwhm, b_type)
 
@@ -129,6 +140,7 @@ def process_and_plot(input_file, fwhm=5.0, b_type='l'):
     plt.savefig(out_name, dpi=300)
     plt.close()
     print(f"   -> Created {out_name}")
+    return True
 
 def run_automation():
     base_path = os.getcwd()
@@ -147,18 +159,18 @@ def run_automation():
             if raw_complex_re.match(fname):
                 full_path = os.path.join(root, fname)
                 try:
-                    write_broadened_spectrum(full_path, fwhm, b_type)
-                    broadened_count += 1
+                    if write_broadened_spectrum(full_path, fwhm, b_type) is not None:
+                        broadened_count += 1
                 except Exception as error:
                     print(f"      Error broadening {fname}: {error}")
                 print(f"Processing: {os.path.join(os.path.basename(root), fname)}")
-                process_and_plot(full_path, fwhm, b_type)
-                count += 1
+                if process_and_plot(full_path, fwhm, b_type):
+                    count += 1
             if avg_re.match(fname):
                 full_path = os.path.join(root, fname)
                 print(f"Processing: {os.path.join(os.path.basename(root), fname)}")
-                process_and_plot(full_path, fwhm, b_type)
-                count += 1
+                if process_and_plot(full_path, fwhm, b_type):
+                    count += 1
 
     print(f"\nSuccess! Generated {count} plots and {broadened_count} numerical broadened spectra.")
 

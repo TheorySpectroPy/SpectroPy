@@ -174,11 +174,16 @@ def run_raman_tensor(dielectric_derivatives_path=None):
     
     energy = dielectric_derivatives_path.removeprefix("epsilon_derivative_")
 
+    def representation(index):
+        if representations is not None and index < len(representations):
+            return representations[index]
+        return "---"
+
     with open("Raman_tensor", "w") as f:
         f.write("# Mode   Freq(THz)   Freq(cm-1)   Irrep.   Raman Tensor (Real + i*Imaginary)\n")
         f.write("#--------------------------------------------------------------------------\n")
         for i in range(n_modes):
-            rep = representations[i] if representations else "---"
+            rep = representation(i)
             f.write(f"{i+1:5d} {frequencies[i]:10.3f} {freq_cm1[i]:11.3f}   {rep:<8s}\n")
             for j in range(3):
                 row_str = "  ".join([f"{raman_tensor_cmplx[i, j, k].real:10.3f}{raman_tensor_cmplx[i, j, k].imag:+10.3f}j" for k in range(3)])
@@ -187,12 +192,12 @@ def run_raman_tensor(dielectric_derivatives_path=None):
 
     with open(f"Raman_intensity_complex_{energy}eV", "w") as f:
         for i in range(n_modes):
-            f.write(f"{freq_cm1[i]:12.3f} {intensities[i]:18.4f}\n")
+            f.write(f"{freq_cm1[i]:12.3f} {intensities[i]:18.4f}       {representation(i)}\n")
 
     if avg_intensities is not None:
         with open(f"Raman_intensity_polarization_averaged_{energy}eV", "w") as f:
             for i in range(n_modes):
-                f.write(f"{freq_cm1[i]:12.3f} {avg_intensities[i]:18.4f}\n")
+                f.write(f"{freq_cm1[i]:12.3f} {avg_intensities[i]:18.4f}       {representation(i)}\n")
             
     print("\ncalculate_spectrum.py finished successfully.")
     print(f"Generated Raman_tensor and intensity files for {energy} eV.")
