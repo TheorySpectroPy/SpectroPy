@@ -77,23 +77,25 @@ def synthesize_missing_sign(epsilon, direction, site_symmetry_cart, atol=1e-4):
 
 
 def compute_atom_tensor(measured, site_symmetry_cart, atol=1e-4):
-    magnitude = np.mean([np.linalg.norm(direction) for direction, _ in measured])
     by_axis = {}
     for direction, epsilon in measured:
         axis, sign = _classify_axis(direction / np.linalg.norm(direction), atol)
-        by_axis.setdefault(axis, {})[sign] = epsilon
+        by_axis.setdefault(axis, {})[sign] = (epsilon, np.linalg.norm(direction))
     slices = []
     for axis, sides in by_axis.items():
         direction = np.eye(3)[axis]
         if 1 in sides and -1 in sides:
-            positive, negative = sides[1], sides[-1]
+            positive, negative = sides[1][0], sides[-1][0]
         elif 1 in sides:
-            positive = sides[1]
+            positive = sides[1][0]
             negative = synthesize_missing_sign(positive, direction, site_symmetry_cart, atol)
         else:
-            negative = sides[-1]
+            negative = sides[-1][0]
             positive = synthesize_missing_sign(negative, -direction, site_symmetry_cart, atol)
-        slices.append((direction, (positive - negative) / (2 * magnitude)))
+        # Every finite difference is divided by its own step length, so the
+        # derivatives do not depend on the spread of the microscopic step sizes.
+        step = np.mean([magnitude for _, magnitude in sides.values()])
+        slices.append((direction, (positive - negative) / (2 * step)))
     if len(slices) == 3:
         result = np.zeros((3, 3, 3))
         for direction, tensor in slices:
@@ -131,3 +133,107 @@ def reconstruct_derivatives(measurements, lattice, site_symmetries, atom_mapping
         expand_to_equivalent_atoms(real, atom_mapping, mapping_matrices_cart),
         expand_to_equivalent_atoms(imaginary, atom_mapping, mapping_matrices_cart),
     )
+
+
+# ---------------------------------------------------------------------------
+# Fractional-basis mode ("fractional") support
+#
+# The `fractional` displacement mode probes along lattice-vector directions
+# (a, b, a+c, ...) instead of Cartesian axes.  VASP still returns the
+# dielectric tensor in Cartesian coordinates, so each central-difference
+# measurement yields
+#
+#     S_f = (eps(+d) - eps(-d)) / 2  ~  D_cart . d  =  D_frac . f
+#
+# where f is the fractional displacement direction, d = f @ lattice is the
+# Cartesian displacement, and the per-atom derivative tensors are
+#
+#     D_cart[a,b,g] = d eps_ab / d r_g    (displacement index in Cartesian)
+#     D_frac[a,b,c] = d eps_ab / d u_c    (displacement index in fractional)
+#
+# with r = u @ lattice.  The measured slice S_f is therefore the derivative
+# contracted with a *fractional* displacement index.
+# ---------------------------------------------------------------------------
+
+
+def reconstruct_fractional_tensor(measured, site_symmetry_frac, lattice):
+    """Reconstruct the per-atom Cartesian derivative tensor from fractional directions.
+
+    PSEUDOCODE (implementation intentionally left blank for now):
+
+    measured : list of (fractional_direction f, slice S_f), where
+        S_f = (eps(+d) - eps(-d)) / 2   (Cartesian 3x3 matrix),
+        with d = f @ lattice the Cartesian displacement.
+
+    1. Expand the orbit of every measured direction under the site symmetry
+       using the MIXED transformation: the displacement index rotates with the
+       FRACTIONAL rotation R, while the two dielectric indices rotate with the
+       CARTESIAN rotation R_cart = frac_to_cart_rotation(R, lattice):
+
+           for R in site_symmetry_frac:
+               f'   = f @ R.T                       # fractional direction image
+               S_f' = R_cart @ S_f @ R_cart.T       # eps rotates in Cartesian
+
+       (This is the key difference from `reconstruct_full_tensor`, which uses
+       the same Cartesian R for both the direction and the eps indices.)
+
+    2. Collect the orbit pairs (f', S_f') into a dict keyed by direction.
+
+    3. Select 3 linearly independent fractional directions {f1, f2, f3} from
+       the orbit (basis selection as in `reconstruct_full_tensor`).
+
+    4. Assemble D_frac (3x3x3) by expressing each fractional axis as a linear
+       combination of the basis directions, exactly as `reconstruct_full_tensor`
+       assembles D_cart, using the relation D_frac . f_k = S_{f_k}.
+
+    5. Convert to the Cartesian displacement basis:
+           D_cart = convert_fractional_tensor_to_cartesian(D_frac, lattice)
+
+    6. Return D_cart (3x3x3), the same shape `compute_atom_tensor` returns.
+    """
+    raise NotImplementedError("fractional-mode tensor reconstruction is not implemented yet")
+
+
+def convert_fractional_tensor_to_cartesian(D_frac, lattice):
+    """Convert a per-atom derivative tensor from the fractional displacement
+    basis to the Cartesian displacement basis.
+
+    PSEUDOCODE (implementation intentionally left blank for now):
+
+    Definitions
+    -----------
+        D_frac[a, b, c] = d eps_ab / d u_c      (u = fractional displacement)
+        D_cart[a, b, g] = d eps_ab / d r_g      (r = Cartesian displacement)
+        r = u @ lattice,  i.e.  r_g = sum_c u_c lattice[c, g]
+
+    Chain rule
+    ----------
+        d eps_ab / d u_c = sum_g (d eps_ab / d r_g) (d r_g / d u_c)
+                         = sum_g D_cart[a, b, g] lattice[c, g]
+
+    i.e. for every dielectric index pair (a, b):
+        D_frac[a, b, :] = lattice @ D_cart[a, b, :]
+
+    Inverting the 3x3 relation for each (a, b):
+        D_cart[a, b, :] = inv(lattice) @ D_frac[a, b, :]
+
+    Implementation sketch
+    ---------------------
+        inv_lattice = np.linalg.inv(lattice)
+        D_cart = np.zeros_like(D_frac)
+        for a in range(3):
+            for b in range(3):
+                D_cart[a, b, :] = inv_lattice @ D_frac[a, b, :]
+        return D_cart
+
+    Notes
+    -----
+    * Only the displacement index (the last index) is transformed; the two
+      dielectric indices (a, b) are already Cartesian (VASP convention).
+    * ``lattice`` is the row-vector lattice matrix (rows = a, b, c), the same
+      convention as ``Structure.lattice`` and ``spectropy_displacements``.
+    * Once every atom's D_cart is known, the Raman tensor for a mode is built
+      from D_cart and the Cartesian eigenvectors as usual, so no further
+      conversion is required at the spectrum stage.
+    """
+    raise NotImplementedError("fractional -> Cartesian conversion is not implemented yet")
