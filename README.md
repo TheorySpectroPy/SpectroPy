@@ -224,6 +224,18 @@ template. It creates `VESTA_MODES` and/or `VMD_MODES`. To load a VMD mode:
 source VMD_MODES/mode_001.vmd
 ```
 
+## Future work
+
+The current `epsilon_derivative_<energy>` files apply the
+`V_prim / (4*pi)` dielectric-to-polarizability conversion to each atomic
+derivative before writing it to disk, where it is rounded and later reread for
+the mode contraction. This follows the legacy Liangbo file convention, but it
+is not the preferred internal design. A future refactor should retain raw
+dielectric derivatives at full precision through the phonon-mode contraction,
+then apply `V_prim / (4*pi)` once to the resulting mode Raman tensor. The
+on-disk format and compatibility plan must be updated deliberately when this
+changes.
+
 ## Citation
 
 If you use SpectroPy in your research, please cite:
