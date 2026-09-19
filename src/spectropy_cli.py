@@ -33,7 +33,8 @@ def _commands(mode: str) -> dict[str, tuple[str, Callable[[], None]]]:
     descriptions = {
         "full": "Generate the full +/- Cartesian displacement set and VASP-ready directories.",
         "atoms": "Generate all +/- Cartesian displacements for symmetry-inequivalent atoms.",
-        "minimal": "Generate Phonopy symmetry-reduced displaced POSCAR directories.",
+        "minimal": "Generate the Cartesian site-symmetry-minimal displacement set.",
+        "fractional": "Generate Phonopy's fractional-basis (lattice-direction) minimal displacement set.",
     }
 
     return {
@@ -84,10 +85,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     add_workdir(displacement_parser)
     displacement_parser.add_argument(
-        "--mode", choices=("full", "atoms", "minimal"), default="full",
+        "--mode", choices=("full", "atoms", "minimal", "fractional"), default="full",
         help=(
             "full: all atoms and +/- Cartesian axes; atoms: all axes for "
-            "symmetry-inequivalent atoms; minimal: Phonopy's minimum set."
+            "symmetry-inequivalent atoms; minimal: Cartesian site-symmetry-minimal "
+            "set; fractional: Phonopy's lattice-basis (fractional) minimum set."
         ),
     )
     for name, help_text in (

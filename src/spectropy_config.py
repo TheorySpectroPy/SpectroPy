@@ -14,7 +14,7 @@ class Settings:
     scattered_polarization: tuple[float, float, float] | None = None
     surface_normal: str | None = None
     laser_energies: tuple[float, ...] = (0.0,)
-    displacement_amplitude: float | None = None
+    displacement_amplitude: tuple[float, float, float] | None = None
     broadening_fwhm: float = 1.0
     broadening_type: str = "lorentzian"
     polarization: str = "specific"
@@ -62,11 +62,16 @@ def read_settings(path: str | Path = "input") -> Settings:
     amplitude = values.get("displacement_amplitude")
     if amplitude is not None:
         try:
-            displacement_amplitude = float(amplitude.split()[0])
+            components = [float(component) for component in amplitude.replace(",", " ").split()]
         except ValueError as error:
             raise ValueError(f"Invalid displacement_amplitude setting: {amplitude}") from error
-        if displacement_amplitude <= 0:
+        if len(components) == 1:
+            components *= 3
+        if len(components) != 3:
+            raise ValueError("displacement_amplitude takes one value or one per Cartesian axis")
+        if min(components) <= 0:
             raise ValueError("displacement_amplitude must be positive")
+        displacement_amplitude = tuple(components)
     else:
         displacement_amplitude = None
 
@@ -114,7 +119,7 @@ def write_settings(path: str | Path, settings: Settings) -> None:
         "laser_energies: " + " ".join(f"{energy:.2f}" for energy in settings.laser_energies),
     ]
     if settings.displacement_amplitude is not None:
-        lines.append(f"displacement_amplitude: {settings.displacement_amplitude:g}")
+        lines.append("displacement_amplitude: " + " ".join(f"{value:g}" for value in settings.displacement_amplitude))
     if settings.frequency_cutoff_cm1 is not None:
         lines.append(f"cutoff: {settings.frequency_cutoff_cm1:g}")
     lines.extend([
