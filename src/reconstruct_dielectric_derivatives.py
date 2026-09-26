@@ -62,9 +62,15 @@ def reconstruct_full_tensor(measured, site_symmetry_cart):
 
 
 def _classify_axis(direction, atol=1e-4):
-    axis = int(np.argmax(np.abs(direction)))
-    sign = 1 if direction[axis] > 0 else -1
-    if not np.allclose(np.abs(direction), np.eye(3)[axis], atol=atol):
+    direction = np.asarray(direction, dtype=float)
+    norm = np.linalg.norm(direction)
+    if norm == 0:
+        raise ValueError("zero displacement direction")
+    unit = direction / norm
+    axis = int(np.argmax(np.abs(unit)))
+    sign = 1 if unit[axis] > 0 else -1
+    transverse = np.delete(np.abs(unit), axis)
+    if np.max(transverse) > atol:
         raise ValueError(f"direction {direction} is not axis-aligned")
     return axis, sign
 
