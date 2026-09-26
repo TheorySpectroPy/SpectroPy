@@ -85,7 +85,7 @@ def write_displacements(
             label = labels[displacement.atom_index - 1]
             output.write(
                 f"{label:<5s}{displacement.atom_index:6d}"
-                f"{vector[0]:12.6f}{vector[1]:12.6f}{vector[2]:12.6f}\n"
+                f"{vector[0]:18.12f}{vector[1]:18.12f}{vector[2]:18.12f}\n"
             )
         output.write(f"{len(unique_atoms):6d}{structure.natoms:6d}     Number of atoms in SC\n")
         for atom_index in unique_atoms:
@@ -366,7 +366,7 @@ def write_atomic_displacements(path: str | Path, displacements: list[Displacemen
             vector = displacement.fractional_vector
             output.write(
                 f"atom{displacement.atom_index:<5d}{displacement.atom_index:6d}"
-                f"{vector[0]:12.6f}{vector[1]:12.6f}{vector[2]:12.6f}\n"
+                f"{vector[0]:18.12f}{vector[1]:18.12f}{vector[2]:18.12f}\n"
             )
 
 
