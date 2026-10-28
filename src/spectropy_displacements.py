@@ -10,6 +10,7 @@ import numpy as np
 import yaml
 
 from process_symmetry import read_site_symmetries, read_symmetry_file
+from reconstruct_dielectric_derivatives import build_fractional_bases, write_fractional_bases
 from spectropy_config import read_settings
 from spectropy_structure import Structure, read_structure, write_structure
 
@@ -371,12 +372,14 @@ def write_atomic_displacements(path: str | Path, displacements: list[Displacemen
 
 
 def write_calculation_directories(displacements: list[Displacement], structure: Structure) -> None:
+    root = Path('displacements') if Path.cwd().name != 'displacements' else Path('.')
+    root.mkdir(exist_ok=True)
     for displacement in displacements:
         filename = f"pos_{displacement.name}"
         positions = structure.fractional_positions.copy()
         positions[displacement.atom_index - 1] += displacement.fractional_vector
-        write_structure(filename, structure, positions)
-        directory = f"ra_{filename}"
+        write_structure(root / filename, structure, positions)
+        directory = root / f"ra_{filename}"
         os.makedirs(directory, exist_ok=True)
         write_structure(Path(directory) / "POSCAR", structure, positions)
 
@@ -394,8 +397,28 @@ def run_displacements(
     displacements = generate_displacements(mode, structure, contcar_path, symmetry_path, amplitude)
     write_structure("ref_poscar.vasp", structure)
     write_displacements("displacements.dat", displacements, structure, _header(mode))
+    if mode == "fractional":
+        bases = build_fractional_bases(read_displacements("displacements.dat"), structure.lattice, read_site_symmetries(symmetry_path))
+        write_fractional_bases("fractional_basis.json", bases)
+        print("Saved fractional reconstruction bases to fractional_basis.json.")
     write_atomic_displacements("atomic_displacement", displacements, amplitude)
     write_calculation_directories(displacements, structure)
+    if read_settings(input_path).difference_scheme == 'forward':
+        # Include the undisplaced optical reference in the workflow's ra_pos_* loop,
+        # but not in the nonzero displacement records used for differentiation.
+        directory = (Path('displacements') if Path.cwd().name != 'displacements' else Path('.')) / 'ra_pos_equilibrium'
+        directory.mkdir(exist_ok=True)
+        path = directory / 'POSCAR'
+        if path.exists():
+            existing = read_structure(path)
+            delta = existing.fractional_positions - structure.fractional_positions if existing.natoms == structure.natoms else None
+            if (existing.atom_symbols != structure.atom_symbols or
+                not np.allclose(existing.lattice, structure.lattice, atol=1e-10, rtol=0) or
+                delta is None or not np.allclose(delta - np.rint(delta), 0, atol=1e-10, rtol=0)):
+                raise ValueError('Existing equilibrium POSCAR differs from displacement reference; refusing to overwrite')
+        else:
+            write_structure(path, structure)
+        print(f'Generated {directory}/POSCAR (undisplaced optical reference).')
     print(f"Generated {len(displacements)} {mode} displacement(s).")
-    print("Wrote ref_poscar.vasp, displacements.dat, atomic_displacement, pos_atom*, and ra_pos_atom*/POSCAR.")
+    print("Wrote reference metadata and displacements/{pos_atom*,ra_pos_atom*/POSCAR}.")
     return displacements

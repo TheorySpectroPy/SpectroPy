@@ -87,7 +87,7 @@ def read_broadening_settings(input_path="input"):
     settings = read_settings(input_path)
     return settings.broadening_fwhm, "g" if settings.broadening_type == "gaussian" else "l"
 
-def process_and_plot(input_file, fwhm=5.0, b_type='l'):
+def process_and_plot(input_file, fwhm=5.0, b_type='l', title=None):
     try:
         freqs, intensities, modes = read_intensity_file(input_file)
         if freqs.size == 0:
@@ -133,6 +133,8 @@ def process_and_plot(input_file, fwhm=5.0, b_type='l'):
     ax.set_ylim(bottom=-0.02, top=1.35)
     ax.set_xlim(left=0, right=max(freqs)+60)
 
+    if title:
+        ax.set_title(title, fontsize=9)
     plt.tight_layout()
     
     base = os.path.basename(input_file)
