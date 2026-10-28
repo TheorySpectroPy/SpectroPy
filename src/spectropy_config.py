@@ -19,6 +19,9 @@ class Settings:
     broadening_type: str = "lorentzian"
     polarization: str = "specific"
     frequency_cutoff_cm1: float | None = None
+    difference_scheme: str = "central"
+    dielectric_source: str = "outcar"
+    site_symmetry_projection: bool = False
 
 
 def _content_lines(path: Path) -> list[str]:
@@ -37,7 +40,7 @@ def read_settings(path: str | Path = "input") -> Settings:
         if match and match.group(1).lower() in {
             "laser_energy", "laser_energies", "displacement_amplitude",
             "broadening_fwhm", "broadening_type", "polarization", "cutoff",
-            "frequency_cutoff",
+            "frequency_cutoff", "difference_scheme", "dielectric_source", "site_symmetry_projection",
         }:
             values[match.group(1).lower()] = match.group(2)
         else:
@@ -103,9 +106,19 @@ def read_settings(path: str | Path = "input") -> Settings:
     else:
         frequency_cutoff_cm1 = None
 
+    difference_scheme = values.get('difference_scheme', 'central').lower()
+    if difference_scheme not in {'central', 'forward'}:
+        raise ValueError('difference_scheme must be central or forward')
+    dielectric_source = values.get('dielectric_source', 'outcar').lower()
+    if dielectric_source not in {'outcar', 'vasprun.xml'}:
+        raise ValueError('dielectric_source must be outcar or vasprun.xml')
+    projection = values.get('site_symmetry_projection', 'false').lower()
+    if projection not in {'true', 'false'}:
+        raise ValueError('site_symmetry_projection must be true or false')
     return Settings(
         vector(0), vector(1), geometry[2][0].lower() if len(geometry) >= 3 else None,
         energies, displacement_amplitude, fwhm, broadening_type, polarization, frequency_cutoff_cm1,
+        difference_scheme, dielectric_source, projection == 'true',
     )
 
 
@@ -126,5 +139,8 @@ def write_settings(path: str | Path, settings: Settings) -> None:
         f"polarization: {settings.polarization}",
         f"broadening_fwhm: {settings.broadening_fwhm:g}",
         f"broadening_type: {settings.broadening_type}",
+        f"difference_scheme: {settings.difference_scheme}",
+        f"dielectric_source: {settings.dielectric_source}",
+        f"site_symmetry_projection: {str(settings.site_symmetry_projection).lower()}",
     ])
     Path(path).write_text("\n".join(lines) + "\n")

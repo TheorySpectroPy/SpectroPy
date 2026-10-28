@@ -6,3 +6,5 @@ displacement_amplitude: 0.03 ! Angstrom
 polarization: average       ! write orientation-averaged intensity too
 broadening_fwhm: 1.0        ! cm-1
 broadening_type: lorentzian
+difference_scheme: central  ! central (default) or forward
+dielectric_source: outcar   ! outcar (default) or vasprun.xml

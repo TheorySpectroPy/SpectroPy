@@ -1,8 +1,9 @@
 import numpy as np
 import os
 import sys
+import re
 from spectropy_config import Settings, read_settings, write_settings
-from spectropy_phonons import read_gamma_modes, read_irreps as _read_irreps
+from spectropy_phonons import read_registered_modes, read_irreps as _read_irreps
 
 
 def read_polarization_mode(input_path="input"):
@@ -37,7 +38,7 @@ def get_user_input():
 
 def read_band_yaml(filepath="band.yaml"):
     print(f"Reading phonon modes from {filepath}...")
-    modes = read_gamma_modes(filepath)
+    modes = read_registered_modes(filepath, provenance="atom_registration.json")
     return modes.frequencies_thz, modes.eigendisplacements, modes.natoms
 
 def read_dielectric_derivatives(filepath, total_atoms):
@@ -71,17 +72,22 @@ def read_dielectric_derivatives(filepath, total_atoms):
         while line_idx < len(block_lines):
             line = block_lines[line_idx]
 
-            if end_pattern and end_pattern in line:
+            if end_pattern and "Imaginary Part" in line:
                 break
             
             parts = line.split()
             
             if parts and "!" not in line and not is_float(parts[0]):
                 atom_counter += 1
-                atom_idx = atom_counter
+                label = re.match(r"\s*Atom\s*(\d+)\b", line, re.IGNORECASE)
+                atom_idx = int(label.group(1)) if label else atom_counter
+                if atom_idx in tensors or not 1 <= atom_idx <= total_atoms:
+                    raise ValueError(f"Invalid or duplicate derivative atom index {atom_idx}")
                 
                 tensor_lines = [block_lines[line_idx+1], block_lines[line_idx+2], block_lines[line_idx+3]]
                 tensor_3x9 = np.array([list(map(float, l.split())) for l in tensor_lines])
+                if tensor_3x9.shape != (3, 9) or not np.isfinite(tensor_3x9).all():
+                    raise ValueError(f'Malformed or nonfinite derivative tensor for atom {atom_idx}')
                 
                 tensor_3x3x3 = np.array([
                     tensor_3x9[:, 0:3],
@@ -97,7 +103,8 @@ def read_dielectric_derivatives(filepath, total_atoms):
     eps_der_real_dict = parse_tensor_block(real_start_idx, end_pattern="! The Imaginary Part")
     eps_der_imag_dict = parse_tensor_block(imag_start_idx)
     
-    missing = [i + 1 for i in range(total_atoms) if (i + 1) not in eps_der_real_dict]
+    missing = [i + 1 for i in range(total_atoms)
+               if (i + 1) not in eps_der_real_dict or (i + 1) not in eps_der_imag_dict]
     if missing:
         print(f"***** dielectric_derivatives file is missing atom(s) {missing} -- "
               "was it written by an up-to-date calculate_dielectric_derivatives.py? *****")
@@ -118,7 +125,7 @@ def read_irreps(filepath="irreps.yaml"):
         print(f"Reading irreducible representations from {filepath}...")
     return labels
     
-def run_raman_tensor(dielectric_derivatives_path=None):
+def run_raman_tensor(dielectric_derivatives_path=None, _phonons=None):
     if dielectric_derivatives_path is None:
         for f in sorted(os.listdir('.')):
             if f.startswith("epsilon_derivative_"):
@@ -130,7 +137,11 @@ def run_raman_tensor(dielectric_derivatives_path=None):
 
     pol_incident, pol_scattered, axis = get_user_input()
     polarization_mode = read_polarization_mode()
-    frequencies, eigendisps, total_atoms = read_band_yaml()
+    if _phonons is None:
+        frequencies, eigendisps, total_atoms = read_band_yaml()
+    else:
+        frequencies, eigendisps, total_atoms = (_phonons.frequencies_thz,
+            _phonons.eigendisplacements, _phonons.natoms)
     eps_der_real, eps_der_imag = read_dielectric_derivatives(dielectric_derivatives_path, total_atoms)
     representations = read_irreps()
 

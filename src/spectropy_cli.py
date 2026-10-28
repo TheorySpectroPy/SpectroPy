@@ -100,6 +100,38 @@ def main(argv: list[str] | None = None) -> int:
     ):
         command_parser = subparsers.add_parser(name, help=help_text, description=help_text)
         add_workdir(command_parser)
+        if name == "derivatives":
+            command_parser.add_argument("--difference", choices=("central", "forward"), default=None, help="Override input difference_scheme (default: central)")
+            command_parser.add_argument("--equilibrium-file", "--equilibrium-vasprun", dest="equilibrium_vasprun", help="Optional external reference matching dielectric_source; defaults to displacements/ra_pos_equilibrium/OUTCAR or vasprun.xml")
+            command_parser.add_argument("--saved-basis", action="store_true", help="Optional saved reconstruction lookup; manual reconstruction is the default")
+
+    check_parser = subparsers.add_parser(
+        "check", help="Export atomic-projection or direct mode-covariance residuals.",
+        description="Check atomic derivative symmetry or mode-specific irrep covariance.",
+    )
+    add_workdir(check_parser)
+    check_parser.add_argument("--kind", choices=("atomic", "mode"), default="atomic",
+                              help="atomic: derivative projection; mode: direct irrep covariance (requires irreps.yaml).")
+    check_parser.add_argument("--subspace-tolerance", type=float, default=1e-5,
+                              help="Maximum mode-subspace leakage for --kind mode (default: 1e-5).")
+    check_parser.add_argument("--energies", nargs="+", type=float, help="Laser energies in eV (default: input).")
+    check_parser.add_argument("--output", default="check", help="Output directory relative to workdir (default: check).")
+    check_parser.add_argument("--epsilon-fraction", type=float, default=1e-12, help="Atomic-projection check only: relative norm regularizer (default: 1e-12).")
+    check_parser.add_argument("--plot", action="store_true", help="Also create residual PNG plots; requires Matplotlib.")
+    check_parser.add_argument("--style", help="Matplotlib style file for --plot.")
+
+    angular_parser = subparsers.add_parser(
+        "angular", help="Export mode-specific parallel and crossed polarization-angle scans.",
+        description="Generate angular intensity data from mode tensors independently of symmetry checks.",
+    )
+    add_workdir(angular_parser)
+    angular_parser.add_argument("--modes", nargs="+", type=int, required=True, help="1-based mode numbers to scan.")
+    angular_parser.add_argument("--energies", nargs="+", type=float, help="Laser energies in eV (default: input).")
+    angular_parser.add_argument("--output", default="angular", help="Output directory relative to workdir (default: angular).")
+    angular_parser.add_argument("--angle-step", type=float, default=1.0, help="Angular sampling step in degrees (default: 1).")
+    angular_parser.add_argument("--surface-normal", choices=("x", "y", "z"), help="Scan normal (default: input, or z).")
+    angular_parser.add_argument("--plot", action="store_true", help="Also create polar PNG plots; requires Matplotlib.")
+    angular_parser.add_argument("--style", help="Matplotlib style file for --plot.")
 
     args = parser.parse_args(argv)
     if args.command is None:
@@ -108,8 +140,29 @@ def main(argv: list[str] | None = None) -> int:
     if not os.path.isdir(args.workdir):
         subparsers.choices[args.command].error(f"work directory does not exist: {args.workdir}")
 
-    commands = _commands(getattr(args, "mode", "full"))
-    _run_in_directory(args.workdir, commands[args.command][1])
+    if args.command == "derivatives":
+        def derive():
+            importlib.import_module("spectropy_derivatives").run_derivatives(
+                use_saved_basis=args.saved_basis, difference_scheme=args.difference,
+                equilibrium_vasprun=args.equilibrium_vasprun)
+        _run_in_directory(args.workdir, derive)
+    elif args.command in ("check", "angular"):
+        style = os.path.abspath(args.style) if args.style else None
+        def analyze() -> None:
+            module = importlib.import_module("spectropy_checks")
+            common = dict(energies=args.energies, output=args.output, plot=args.plot, style=style)
+            if args.command == "check":
+                if args.kind == "mode":
+                    module.run_mode_check(subspace_tolerance=args.subspace_tolerance, **common)
+                else:
+                    module.run_check(epsilon_fraction=args.epsilon_fraction, **common)
+            else:
+                module.run_angular(args.modes, angle_step=args.angle_step,
+                                   surface_normal=args.surface_normal, **common)
+        _run_in_directory(args.workdir, analyze)
+    else:
+        commands = _commands(getattr(args, "mode", "full"))
+        _run_in_directory(args.workdir, commands[args.command][1])
     return 0
 
 
