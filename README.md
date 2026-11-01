@@ -24,6 +24,9 @@ phonon eigenvectors to produce Raman tensors, intensities, and broadened plots.
 - Produces Lorentzian- or Gaussian-broadened Raman plots.
 - Checks mode symmetry consistency and exports polarization-angle scans.
 - Generates VMD or VESTA phonon-mode visualizations.
+- Preserves raw derivatives and spectra alongside optional site-denoised outputs.
+- Provides experimental collective-mode displacements with degeneracy/sign
+  reduction and joint mode-covariance denoising.
 
 ## Installation
 
@@ -122,27 +125,26 @@ The `input` file also selects the derivative scheme:
 
 ```text
 difference_scheme: central
-dielectric_source: outcar
+dielectric_source: vasprun.xml
 ```
 
 For forward differences, use `difference_scheme: forward` before generating
 displacements. SpectroPy also creates `displacements/ra_pos_equilibrium/POSCAR`, containing
 the undisplaced reference. The workflow runs it alongside the `ra_pos_*`
 displacement directories with the same optical inputs. Derivative processing
-automatically reads `displacements/ra_pos_equilibrium/OUTCAR` (or `vasprun.xml` when selected); no equilibrium path
+automatically reads `displacements/ra_pos_equilibrium/vasprun.xml`; no equilibrium path
 setting is needed. The reference is not a zero-length displacement in
 `displacements.dat`. Central differences remain the default and do not
 generate this extra directory. `--difference` overrides the input scheme;
 `--equilibrium-file` (`--equilibrium-vasprun` is a compatibility alias) remains an optional override for existing external
 reference calculations.
 
-`dielectric_source: outcar` is the default for both displaced and equilibrium
-optics. It reads the six-decimal density-density dielectric tables, requires
-the requested energy to exist exactly on the printed grid, and never silently
-falls back to XML. To use the finer XML energy grid with its lower printed
-precision and legacy nearest-energy selection, set
-`dielectric_source: vasprun.xml`. Derivative exports retain full Python
-floating-point precision; this does not add digits to the original VASP output.
+`vasprun.xml` is the only supported VASP dielectric source. Its density-density
+block is read by named fields, preserving all nine components independently.
+Missing transpose components are rejected, never filled by assumed symmetry.
+There is no OUTCAR fallback. The nearest tabulated photon energy is selected
+without interpolation. Printed precision depends on the VASP build; derivative
+exports retain the available floating-point precision.
 
 ```bash
 # Full finite-difference set: every atom in +/- Cartesian directions.
@@ -166,11 +168,10 @@ remaining atoms during the derivative stage.
 Fractional mode also writes `fractional_basis.json`. It stores each
 representative atom's three-vector reconstruction basis, its inverse, and
 the symmetry transformations that supply its directional responses. The
-derivative stage reuses this basis for both tensor parts and every laser
-energy, without repeating direction selection. The saved file is checked
-against the displacement records, lattice, and site rotations; a stale file
-is rejected. Historical datasets without this file remain supported: their
-bases are prepared once in memory when the derivative command starts.
+derivative stage reconstructs the basis explicitly by default. Use
+`spectropy derivatives --saved-basis` to reuse the saved basis. When used,
+the file is checked against the displacement records, lattice, and site
+rotations; a stale file is rejected. Datasets without this file remain supported.
 
 ### 3. Run DFT calculations
 
@@ -192,6 +193,13 @@ This command evaluates every `laser_energies` value in `input`. It copies
 - `dielectric_tensor_<frequency>`: dielectric tensor for every displacement.
 - `epsilon_derivative_<frequency>`: complex dielectric-tensor derivatives
   for all atoms, including symmetry-reconstructed data where applicable.
+- `raw_epsilon_derivative_<frequency>`: always saved before site averaging.
+
+Set `site_symmetry_projection: true` in `input` to also write
+`corrected_epsilon_derivative_<frequency>` and per-atom residual CSV files.
+The unprefixed file then selects the corrected field. Raw means before site
+averaging, not before symmetry reconstruction. See [site projection](docs/site_projection.md)
+for supported displacement modes, conventions, and limitations.
 
 When `laser_energies` is absent, SpectroPy evaluates the default `0.00 eV`
 case. This replaces the separate static-derivative workflow.
@@ -214,11 +222,20 @@ This command reads `band.yaml`, `irreps.yaml` when present, and the derivative
 file for every `laser_energies` value in `input`. It prompts for the
 experimental geometry unless `input` is provided, then writes:
 
-- `Raman_tensor`: complex Raman tensor for each vibrational mode.
+- `Raman_tensor_<energy>eV`: complex Raman tensor for each vibrational mode.
+  `Raman_tensor` is a compatibility alias for the last processed energy.
 - `Raman_intensity_complex_<energy>eV`: frequency and intensity for the
   requested polarization geometry.
-- `Raman_intensity_polarization_averaged_<energy>eV`: orientation-averaged
-  (powder) intensities.
+- `Raman_intensity_polarization_averaged_<energy>eV`: summed polarization-channel
+  intensities, only when `polarization: average` is requested. This is not a
+  general powder orientational integral.
+
+The atomic spectrum stage always writes separate `raw_` tensor and intensity
+files. When site projection is enabled, it also writes `corrected_` versions;
+unprefixed files retain the active selection for compatibility. Missing raw or
+corrected derivatives with projection enabled require rerunning the derivative
+stage. Existing files are not deleted when projection is disabled. The standard
+plot command reads the unprefixed, selected intensities, not both variants.
 
 To predefine the geometry and laser energies, create `input` as follows:
 
@@ -391,6 +408,37 @@ If you use SpectroPy in your research, please cite:
   url = {https://doi.org/10.1021/acsami.5c20316}
 }
 ```
+
+## Experimental collective-mode workflow
+
+Experimental VASP collective-mode displacements, partner/sign reduction and
+optional joint mode-covariance denoising are described in
+[mode displacement documentation](docs/mode_displacements.md). This feature
+preserves raw tensors separately from projected tensors.
+
+```bash
+spectropy mode-displacements --q 0.01
+# Run VASP optical calculations externally in the generated directories.
+spectropy mode-tensors --denoise
+```
+
+See [the mode example](examples/MoS2_Mode_Displacements/README.md). The normal
+coordinate is in Angstrom sqrt(amu), not a maximum atomic displacement.
+Reduced seeds may be combinations of degenerate modes; the manifest is
+authoritative. This experimental route does not launch DFT calculations.
+
+## Development and testing
+
+```bash
+python -m pip install -e '.[all,dev]'
+python -m pytest -q
+```
+
+Regression tests cover nine-component XML parsing, finite differences,
+symmetry projection, raw/corrected output separation, and collective-mode
+reconstruction with synthetic dielectric responses. These tests do not replace
+DFT convergence studies or establish agreement between different functionals.
+See [the change notes](CHANGELOG.md) for compatibility changes.
 
 ## License
 

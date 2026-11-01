@@ -89,7 +89,7 @@ class SavedFractionalBasisTests(unittest.TestCase):
                      patch.object(derivatives, "read_site_symmetries", return_value=self.symmetry), \
                      patch.object(derivatives, "compute_mapping_matrices", return_value=(None, None, {})), \
                      patch.object(derivatives, "collect_vasprun_files"), \
-                     patch.object(derivatives, "read_settings", return_value=SimpleNamespace(laser_energies=[0., 1.5], difference_scheme='central', dielectric_source='outcar')), \
+                     patch.object(derivatives, "read_settings", return_value=SimpleNamespace(laser_energies=[0., 1.5], difference_scheme='central', dielectric_source='vasprun.xml')), \
                      patch.object(derivatives, "read_displaced_dielectrics", return_value=measured), \
                      patch.object(reconstruction, "expand_direction_orbit", side_effect=AssertionError("Repeated orbit search")):
                     derivatives.run_derivatives(use_saved_basis=True)
@@ -102,7 +102,7 @@ class SavedFractionalBasisTests(unittest.TestCase):
                      patch.object(derivatives, "read_site_symmetries", return_value=self.symmetry), \
                      patch.object(derivatives, "compute_mapping_matrices", return_value=(None, None, {})), \
                      patch.object(derivatives, "collect_vasprun_files"), \
-                     patch.object(derivatives, "read_settings", return_value=SimpleNamespace(laser_energies=[0.], difference_scheme='central', dielectric_source='outcar')), \
+                     patch.object(derivatives, "read_settings", return_value=SimpleNamespace(laser_energies=[0.], difference_scheme='central', dielectric_source='vasprun.xml')), \
                      patch.object(derivatives, "read_displaced_dielectrics", return_value=measured):
                     derivatives.run_derivatives()
             finally:

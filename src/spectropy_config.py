@@ -20,7 +20,7 @@ class Settings:
     polarization: str = "specific"
     frequency_cutoff_cm1: float | None = None
     difference_scheme: str = "central"
-    dielectric_source: str = "outcar"
+    dielectric_source: str = "vasprun.xml"
     site_symmetry_projection: bool = False
 
 
@@ -109,9 +109,9 @@ def read_settings(path: str | Path = "input") -> Settings:
     difference_scheme = values.get('difference_scheme', 'central').lower()
     if difference_scheme not in {'central', 'forward'}:
         raise ValueError('difference_scheme must be central or forward')
-    dielectric_source = values.get('dielectric_source', 'outcar').lower()
-    if dielectric_source not in {'outcar', 'vasprun.xml'}:
-        raise ValueError('dielectric_source must be outcar or vasprun.xml')
+    dielectric_source = values.get('dielectric_source', 'vasprun.xml').lower()
+    if dielectric_source != 'vasprun.xml':
+        raise ValueError('dielectric_source must be vasprun.xml')
     projection = values.get('site_symmetry_projection', 'false').lower()
     if projection not in {'true', 'false'}:
         raise ValueError('site_symmetry_projection must be true or false')

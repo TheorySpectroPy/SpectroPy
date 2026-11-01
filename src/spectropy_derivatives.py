@@ -85,7 +85,7 @@ def run_derivatives(input_path="input", use_saved_basis=False,
     settings = read_settings(input_path)
     site_projection = getattr(settings, 'site_symmetry_projection', False)
     dielectric_source = settings.dielectric_source
-    dielectric_filename = 'OUTCAR' if dielectric_source == 'outcar' else 'vasprun.xml'
+    dielectric_filename = 'vasprun.xml'
     difference_scheme = settings.difference_scheme if difference_scheme is None else difference_scheme
     automatic_reference = difference_scheme == 'forward' and equilibrium_vasprun is None
     if difference_scheme == 'forward' and equilibrium_vasprun is None:
