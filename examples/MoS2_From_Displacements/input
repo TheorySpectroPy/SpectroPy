@@ -1,0 +1,11 @@
+1.0 0.0 0.0                  ! incident polarization: x
+1.0 0.0 0.0                  ! scattered polarization: x
+z                            ! surface normal
+laser_energies: 0.00          ! eV; static limit, not a finite laser energy
+displacement_amplitude: 0.03 ! Angstrom; illustrative, not convergence-tested here
+difference_scheme: central
+dielectric_source: vasprun.xml
+site_symmetry_projection: true
+polarization: specific
+broadening_fwhm: 1.0          ! cm-1, full width at half maximum
+broadening_type: lorentzian

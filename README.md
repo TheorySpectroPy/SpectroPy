@@ -107,6 +107,10 @@ python src/visualize_modes.py
 
 The following workflow starts from a relaxed crystal structure. The
 [`examples/MoS2_Tutorial`](examples/MoS2_Tutorial/README.md) directory provides an example.
+For a more detailed walkthrough starting before displacement generation, see
+[MoS2_From_Displacements](examples/MoS2_From_Displacements/README.md).
+Its starting structure/phonons and raw dielectric bundle are currently
+placeholders to be supplied; it is not yet a complete runnable dataset.
 
 ### 1. Prepare a calculation directory
 
