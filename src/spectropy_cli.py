@@ -102,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
         add_workdir(command_parser)
         if name == "derivatives":
             command_parser.add_argument("--difference", choices=("central", "forward"), default=None, help="Override input difference_scheme (default: central)")
-            command_parser.add_argument("--equilibrium-file", "--equilibrium-vasprun", dest="equilibrium_vasprun", help="Optional external reference matching dielectric_source; defaults to displacements/ra_pos_equilibrium/OUTCAR or vasprun.xml")
+            command_parser.add_argument("--equilibrium-file", "--equilibrium-vasprun", dest="equilibrium_vasprun", help="Optional external reference in XML format; defaults to displacements/ra_pos_equilibrium/vasprun.xml")
             command_parser.add_argument("--saved-basis", action="store_true", help="Optional saved reconstruction lookup; manual reconstruction is the default")
 
     check_parser = subparsers.add_parser(
@@ -133,6 +133,22 @@ def main(argv: list[str] | None = None) -> int:
     angular_parser.add_argument("--plot", action="store_true", help="Also create polar PNG plots; requires Matplotlib.")
     angular_parser.add_argument("--style", help="Matplotlib style file for --plot.")
 
+    mode_displacements = subparsers.add_parser("mode-displacements", help="Generate collective mode displacements with partner/sign reduction.")
+    add_workdir(mode_displacements)
+    mode_displacements.add_argument("--modes", nargs="+", type=int, help="1-based indices; complete partner groups are reconstructed.")
+    mode_displacements.add_argument("--q", type=float, default=.01, help="Normal coordinate in Angstrom sqrt(amu), matching Liangbo's raman_dis_mode.")
+    mode_displacements.add_argument("--no-reduction", action="store_true", help="Explicit original-mode +/- pairs (Fortran comparison path).")
+    mode_displacements.add_argument("--keep-both-signs", action="store_true", help="Reduce partners but compute both signs explicitly.")
+    mode_displacements.add_argument("--output", default="mode_displacements")
+    mode_displacements.add_argument("--minimum-frequency", type=float, default=1.0, help="Default automatic selection excludes frequencies below this cm^-1.")
+    mode_tensors = subparsers.add_parser("mode-tensors", help="Reconstruct mode tensors directly from collective displaced dielectric tensors.")
+    add_workdir(mode_tensors)
+    mode_tensors.add_argument("--directory", default="mode_displacements")
+    mode_tensors.add_argument("--output", default="mode_results")
+    mode_tensors.add_argument("--source", choices=("vasprun.xml",), default="vasprun.xml")
+    mode_tensors.add_argument("--energies", nargs="+", type=float)
+    mode_tensors.add_argument("--denoise", action="store_true", help="Project complete mode partner groups onto Neumann covariance; preserve raw tensors (VASP only).")
+
     args = parser.parse_args(argv)
     if args.command is None:
         parser.print_help()
@@ -140,7 +156,17 @@ def main(argv: list[str] | None = None) -> int:
     if not os.path.isdir(args.workdir):
         subparsers.choices[args.command].error(f"work directory does not exist: {args.workdir}")
 
-    if args.command == "derivatives":
+    if args.command in {"mode-displacements", "mode-tensors"}:
+        def collective():
+            module = importlib.import_module("spectropy_modes")
+            if args.command == "mode-displacements":
+                module.generate(q=args.q, modes=args.modes,
+                                reduce=not args.no_reduction, reuse_sign=not args.keep_both_signs,
+                                output=args.output, minimum_frequency=args.minimum_frequency)
+            else:
+                module.reconstruct(args.directory, args.source, args.energies, args.output, denoise=args.denoise)
+        _run_in_directory(args.workdir, collective)
+    elif args.command == "derivatives":
         def derive():
             importlib.import_module("spectropy_derivatives").run_derivatives(
                 use_saved_basis=args.saved_basis, difference_scheme=args.difference,

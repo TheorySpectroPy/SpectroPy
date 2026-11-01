@@ -30,6 +30,18 @@ corrected rank-three tensor, and that norm multiplied by the unit-cell
 volume divided by 4π (the scale in the derivative table files). The console
 prints each residual and the unweighted mean over measured representatives.
 
-Use a separate working directory to preserve raw results. The correction can
+`spectropy spectrum` always writes `raw_Raman_tensor_<energy>eV` and
+`raw_Raman_intensity_complex_<energy>eV`. With projection enabled it additionally
+writes the corresponding `corrected_` files. Polarization-averaged intensity
+files, when requested, follow the same prefixes. Unprefixed spectrum files
+remain the active selection (corrected when enabled, raw otherwise), and
+`Raman_tensor` remains the legacy alias for the last processed energy.
+Energy-specific tensor files prevent one energy from overwriting another.
+If projection is enabled, missing raw or corrected derivative files are an
+error: rerun the derivative stage rather than relabeling corrected data as raw.
+Raw here means before site averaging; symmetry reconstruction is still used.
+Previously generated files are not deleted when a setting is disabled.
+
+The correction can
 lower the Neumann residual by construction; this is not independent validation
 of physical accuracy. Errors already satisfying symmetry survive.

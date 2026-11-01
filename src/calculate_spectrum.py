@@ -125,7 +125,7 @@ def read_irreps(filepath="irreps.yaml"):
         print(f"Reading irreducible representations from {filepath}...")
     return labels
     
-def run_raman_tensor(dielectric_derivatives_path=None, _phonons=None):
+def run_raman_tensor(dielectric_derivatives_path=None, _phonons=None, output_prefix=""):
     if dielectric_derivatives_path is None:
         for f in sorted(os.listdir('.')):
             if f.startswith("epsilon_derivative_"):
@@ -183,14 +183,15 @@ def run_raman_tensor(dielectric_derivatives_path=None, _phonons=None):
 
     print("Writing final output files...")
     
-    energy = dielectric_derivatives_path.removeprefix("epsilon_derivative_")
+    energy = os.path.basename(dielectric_derivatives_path).split("epsilon_derivative_", 1)[1]
 
     def representation(index):
         if representations is not None and index < len(representations):
             return representations[index]
         return "---"
 
-    with open("Raman_tensor", "w") as f:
+    tensor_path = f"{output_prefix}Raman_tensor_{energy}eV"
+    with open(tensor_path, "w") as f:
         f.write("# Mode   Freq(THz)   Freq(cm-1)   Irrep.   Raman Tensor (Real + i*Imaginary)\n")
         f.write("#--------------------------------------------------------------------------\n")
         for i in range(n_modes):
@@ -201,12 +202,17 @@ def run_raman_tensor(dielectric_derivatives_path=None, _phonons=None):
                 f.write(f"    {row_str}\n")
             f.write("\n")
 
-    with open(f"Raman_intensity_complex_{energy}eV", "w") as f:
+    # Preserve the legacy active tensor alias, without overwriting named variants.
+    if not output_prefix:
+        import shutil
+        shutil.copyfile(tensor_path, "Raman_tensor")
+
+    with open(f"{output_prefix}Raman_intensity_complex_{energy}eV", "w") as f:
         for i in range(n_modes):
             f.write(f"{freq_cm1[i]:12.3f} {intensities[i]:18.4f}       {representation(i)}\n")
 
     if avg_intensities is not None:
-        with open(f"Raman_intensity_polarization_averaged_{energy}eV", "w") as f:
+        with open(f"{output_prefix}Raman_intensity_polarization_averaged_{energy}eV", "w") as f:
             for i in range(n_modes):
                 f.write(f"{freq_cm1[i]:12.3f} {avg_intensities[i]:18.4f}       {representation(i)}\n")
             
@@ -214,14 +220,30 @@ def run_raman_tensor(dielectric_derivatives_path=None, _phonons=None):
     print(f"Generated Raman_tensor and intensity files for {energy} eV.")
 
 
-def run_raman_tensors_for_input(input_path="input"):
+def run_raman_tensors_for_input(input_path="input", _phonons=None):
     from spectropy_config import read_settings
 
-    for energy in read_settings(input_path).laser_energies:
+    settings = read_settings(input_path)
+    for energy in settings.laser_energies:
         derivative_path = f"epsilon_derivative_{energy:.2f}"
-        if not os.path.isfile(derivative_path):
-            raise FileNotFoundError(f"Missing {derivative_path}; run `spectropy derivatives` first")
-        run_raman_tensor(derivative_path)
+        raw_path = f"raw_{derivative_path}"
+        corrected_path = f"corrected_{derivative_path}"
+        # Older unprojected datasets may only have the legacy filename. Never
+        # label an active, potentially corrected field as raw when denoising.
+        if not os.path.isfile(raw_path) and not settings.site_symmetry_projection:
+            raw_path = derivative_path
+        required = [raw_path]
+        if settings.site_symmetry_projection:
+            required.append(corrected_path)
+        for path in required:
+            if not os.path.isfile(path):
+                raise FileNotFoundError(f"Missing {path}; run `spectropy derivatives` first")
+        run_raman_tensor(raw_path, _phonons=_phonons, output_prefix="raw_")
+        if settings.site_symmetry_projection:
+            run_raman_tensor(corrected_path, _phonons=_phonons, output_prefix="corrected_")
+        # Existing workflow consumers continue to see the selected field.
+        run_raman_tensor(corrected_path if settings.site_symmetry_projection else raw_path,
+                         _phonons=_phonons)
 
 if __name__ == "__main__":
     run_raman_tensors_for_input()

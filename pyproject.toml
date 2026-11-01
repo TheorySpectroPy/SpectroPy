@@ -50,6 +50,7 @@ py-modules = [
     "spectropy_phonons",
     "spectropy_paths",
     "spectropy_structure",
+    "spectropy_modes",
     "spectropy_symbolic",
     "visualize_modes",
 ]

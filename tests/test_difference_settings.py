@@ -56,13 +56,13 @@ class DifferenceSettingsTests(unittest.TestCase):
                     if scheme == 'forward':
                         np.testing.assert_allclose(read_structure('displacements/ra_pos_equilibrium/POSCAR').fractional_positions,
                                                    read_structure('CONTCAR').fractional_positions)
-                        Path('displacements/ra_pos_equilibrium/OUTCAR').touch()
+                        Path('displacements/ra_pos_equilibrium/vasprun.xml').touch()
                         measurements = {1: [(r.fractional_vector * 2, np.eye(3), np.zeros((3, 3))) for r in records]}
                         with patch('spectropy_derivatives.collect_vasprun_files'), \
                              patch('spectropy_derivatives.read_dielectric', return_value=(np.eye(3), np.zeros((3, 3)))) as reader, \
                              patch('spectropy_derivatives.read_displaced_dielectrics', return_value=measurements):
                             run_derivatives()
-                        reader.assert_called_once_with('displacements/ra_pos_equilibrium/OUTCAR', 0., 'outcar')
+                        reader.assert_called_once_with('displacements/ra_pos_equilibrium/vasprun.xml', 0., 'vasprun.xml')
                         self.assertTrue(Path('epsilon_derivative_0.00').exists())
                 finally:
                     os.chdir(original)

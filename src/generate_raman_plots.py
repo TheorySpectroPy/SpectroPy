@@ -24,7 +24,13 @@ def lorentzian(x, center, amplitude, fwhm):
 
 
 def broaden_spectrum(freqs, intensities, fwhm, b_type):
-    x_dense = np.linspace(max(0, min(freqs) - 50), max(freqs) + 50, 2000)
+    if not np.isfinite(fwhm) or fwhm <= 0:
+        raise ValueError("Linewidth FWHM must be finite and positive")
+    # At most FWHM/20 spacing bounds worst-offset Lorentzian peak loss
+    # to 1 - 1/(1+0.05**2), approximately 0.25%, independent of span.
+    left, right = max(0, min(freqs) - 50), max(freqs) + 50
+    count = max(2, int(np.ceil((right-left)/(fwhm/20)))+1)
+    x_dense = np.linspace(left, right, count)
     y_dense = np.zeros_like(x_dense)
     profile = gaussian if b_type == 'g' else lorentzian
     for frequency, intensity in zip(freqs, intensities):
