@@ -10,7 +10,7 @@ We have provided the essential files, so you can skip the VASP steps:
 
 ### Inputs
 
-- `CONTCAR`, `INCAR`, `KPOINTS`: Standard VASP inputs for the simulation.
+- `CONTCAR`, `INCAR`, `KPOINTS`: Standard VASP inputs for the simulation. It is crucial to turn off all symmetries (ISYM = -1) in INCAR.
 - `band.yaml`: Phonon modes calculated by Phonopy.
 
 ### Pre-Calculated Data
