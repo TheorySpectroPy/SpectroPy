@@ -10,7 +10,7 @@ We have provided the essential files, so you can skip the VASP steps:
 
 ### Inputs
 
-- `CONTCAR`, `INCAR`, `KPOINTS`: Standard VASP inputs for the simulation. It is crucial to turn off all symmetries (ISYM = -1) in INCAR to generate correct frequency-dependent dielectric tensor. 
+- `CONTCAR`, `INCAR`, `KPOINTS`: Standard VASP inputs for the simulation. It is crucial to turn off all symmetries (ISYM = -1) in INCAR to generate correct frequency-dependent dielectric tensor. With default ISYM = 2, VASP generates wrong off-diagonal terms. 
 - `band.yaml`: Phonon modes calculated by Phonopy.
 
 ### Pre-Calculated Data
