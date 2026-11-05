@@ -90,3 +90,29 @@ def read_displaced_dielectrics(displacements, lattice, target_frequency, directo
         direction = displacement.fractional_vector @ lattice
         measured[displacement.atom_index].append((direction, real, imaginary))
     return dict(measured)
+
+
+def read_displaced_dielectrics_many(displacements, lattice, energies, directory=None,
+                                   source="vasprun.xml"):
+    """Read each collected XML once for all energies, preserving request order.
+
+    Keep only detached 3x3 samples: the XML reader's slices otherwise retain
+    the full frequency-grid arrays for every displacement in memory.
+    No persistent cache, interpolation, or reciprocity assumption is introduced.
+    """
+    _xml_only(source)
+    from spectropy_paths import displacement_root
+    if directory is None:
+        directory = displacement_root() / 'vasprun'
+    energies = list(energies)
+    measured = [defaultdict(list) for _ in energies]
+    if not energies:
+        return []
+    for displacement in displacements:
+        filename = os.path.join(directory, f"{displacement.name}.xml")
+        samples = read_dielectrics_xml(filename, energies)
+        direction = displacement.fractional_vector @ lattice
+        for measurements, (real, imaginary) in zip(measured, samples):
+            measurements[displacement.atom_index].append(
+                (direction.copy(), real.copy(), imaginary.copy()))
+    return [dict(measurements) for measurements in measured]
