@@ -192,7 +192,14 @@ spectropy derivatives
 ```
 
 This command evaluates every `laser_energies` value in `input`. It copies
-`displacements/ra_pos_atom*/vasprun.xml` into `displacements/vasprun/`, then writes:
+`displacements/ra_pos_atom*/vasprun.xml` into `displacements/vasprun/` (the
+collection step is retained). Each collected XML is then parsed once for all
+requested energies, rather than once per energy. Forward differences likewise
+read the equilibrium XML once. Sampling remains nearest-grid-point, with all
+nine components preserved and the complete XML validated; no persistent cache
+or interpolation is introduced. Only the requested 3x3 samples are retained
+in memory, not the complete frequency arrays for every displacement.
+The command writes:
 
 - `dielectric_tensor_<frequency>`: dielectric tensor for every displacement.
 - `epsilon_derivative_<frequency>`: complex dielectric-tensor derivatives

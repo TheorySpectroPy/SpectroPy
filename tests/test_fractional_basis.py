@@ -90,7 +90,7 @@ class SavedFractionalBasisTests(unittest.TestCase):
                      patch.object(derivatives, "compute_mapping_matrices", return_value=(None, None, {})), \
                      patch.object(derivatives, "collect_vasprun_files"), \
                      patch.object(derivatives, "read_settings", return_value=SimpleNamespace(laser_energies=[0., 1.5], difference_scheme='central', dielectric_source='vasprun.xml')), \
-                     patch.object(derivatives, "read_displaced_dielectrics", return_value=measured), \
+                     patch.object(derivatives, "read_displaced_dielectrics_many", return_value=[measured, measured]), \
                      patch.object(reconstruction, "expand_direction_orbit", side_effect=AssertionError("Repeated orbit search")):
                     derivatives.run_derivatives(use_saved_basis=True)
                 self.assertTrue(Path("epsilon_derivative_0.00").is_file())
@@ -103,7 +103,7 @@ class SavedFractionalBasisTests(unittest.TestCase):
                      patch.object(derivatives, "compute_mapping_matrices", return_value=(None, None, {})), \
                      patch.object(derivatives, "collect_vasprun_files"), \
                      patch.object(derivatives, "read_settings", return_value=SimpleNamespace(laser_energies=[0.], difference_scheme='central', dielectric_source='vasprun.xml')), \
-                     patch.object(derivatives, "read_displaced_dielectrics", return_value=measured):
+                     patch.object(derivatives, "read_displaced_dielectrics_many", return_value=[measured]):
                     derivatives.run_derivatives()
             finally:
                 os.chdir(previous)

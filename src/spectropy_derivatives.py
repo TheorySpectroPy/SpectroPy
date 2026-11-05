@@ -4,7 +4,8 @@ import csv
 
 import numpy as np
 
-from calculate_dielectric_derivatives import collect_vasprun_files, read_displaced_dielectrics, read_dielectric
+from calculate_dielectric_derivatives import (collect_vasprun_files,
+    read_displaced_dielectrics_many, read_dielectrics_xml)
 from process_symmetry import compute_mapping_matrices, read_site_symmetries, read_symmetry_file
 from reconstruct_dielectric_derivatives import (calculate_derivatives, reconstruct_derivatives,
     reconstruct_fractional_derivatives, read_fractional_bases)
@@ -129,15 +130,13 @@ def run_derivatives(input_path="input", use_saved_basis=False,
             print("Reconstructing independent directions from the displacement set (no lookup required).")
     print(f"Collecting {dielectric_filename} files (dielectric_source: {dielectric_source})...")
     collect_vasprun_files(displacements, source=dielectric_source)
-    energies = settings.laser_energies
+    energies = list(settings.laser_energies)
     print("Laser energies (eV): " + ", ".join(f"{energy:.2f}" for energy in energies))
-    for energy in energies:
-        equilibrium = None
-        if difference_scheme == "forward":
-            equilibrium = read_dielectric(equilibrium_vasprun, energy, dielectric_source)
-            if equilibrium[0] is None:
-                raise ValueError("Missing equilibrium dielectric data for forward differences")
-        measurements = read_displaced_dielectrics(displacements, structure.lattice, energy, source=dielectric_source)
+    equilibria = (read_dielectrics_xml(equilibrium_vasprun, energies)
+                  if difference_scheme == "forward" else [None] * len(energies))
+    measured_by_energy = read_displaced_dielectrics_many(
+        displacements, structure.lattice, energies, source=dielectric_source)
+    for energy, equilibrium, measurements in zip(energies, equilibria, measured_by_energy):
         _write_dielectric_log(f"dielectric_tensor_{energy:.2f}", energy, measurements, structure.fractional_positions)
         def reconstruct(projected):
             if mode == "full":
