@@ -2,9 +2,10 @@
 
 Provide consistently ordered CONTCAR (VASP), plus Phonopy
 band.yaml, irreps.yaml and symmetry. No electronic results are bundled.
-Use the neighboring input file for energies and xx polarization.
+Use the neighboring input file for mode selection, amplitude, energies, output
+directories, and xx polarization.
 
-    spectropy mode-displacements --q 0.01
+    spectropy mode-displacements
 
 The default enumerates every positive-frequency Raman-active mode above
 1 cm^-1, every degenerate partner separately, with both signs. It does not
@@ -15,7 +16,8 @@ even though the example input requests xx polarization.
 
 To select an E' pair explicitly (verify its mode numbers in your own dataset):
 
-    spectropy mode-displacements --modes 6 7 --q 0.01 --output explicit_pair
+Set `mode_indices: 6 7` and `mode_displacements_directory: explicit_pair` in
+`input`, then run `spectropy mode-displacements` in a clean working directory.
 
 Both modes are directly displaced. Explicit selection overrides Raman-activity
 and frequency filtering. Every selected mode requires both signs.
@@ -33,8 +35,10 @@ electronic convergence settings.
 
 After external optical calculations finish in the generated directories:
 
-    spectropy mode-tensors --directory mode_displacements --output mode_results
+    spectropy mode-tensors
 
-vasprun.xml is the only VASP dielectric source; all nine components are retained.
+vasprun.xml is the only VASP dielectric source; all printed components are retained.
+Six-component files are accepted with a warning that missing transpose entries
+are filled by reciprocity, rather than independently calculated.
 Each output tensor comes directly from its calculated positive/negative pair.
-See [the main README](../../README.md#mode-displacements) for inputs and units.
+See [the main README](../../README.md#collective-mode-displacements) for inputs and units.

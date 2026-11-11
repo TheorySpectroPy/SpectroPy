@@ -23,6 +23,15 @@ class Settings:
     difference_scheme: str = "central"
     dielectric_source: str = "vasprun.xml"
     site_symmetry_projection: bool = False
+    displacement_mode: str = "full"
+    displacement_basis: str = "cartesian"
+    equilibrium_file: str | None = None
+    saved_basis: bool = False
+    mode_q: float = 0.01
+    mode_indices: tuple[int, ...] | None = None
+    mode_minimum_frequency: float = 1.0
+    mode_displacements_directory: str = "mode_displacements"
+    mode_results_directory: str = "mode_results"
 
     @property
     def broadening_fwhm(self):
@@ -47,18 +56,38 @@ def read_settings(path: str | Path = "input") -> Settings:
             "laser_energy", "laser_energies", "displacement_amplitude",
             "broadening_hwhm", "broadening_fwhm", "broadening_type", "polarization", "cutoff",
             "frequency_cutoff", "difference_scheme", "dielectric_source", "site_symmetry_projection",
+            "displacement_mode", "displacement_basis", "equilibrium_file", "saved_basis",
+            "mode_q", "mode_indices", "mode_minimum_frequency",
+            "mode_displacements_directory", "mode_results_directory",
+            "incident_polarization", "scattered_polarization", "surface_normal",
         }:
             values[match.group(1).lower()] = match.group(2)
+        elif re.match(r"^[a-z_]+\s*[:=]", line, re.I):
+            raise ValueError(f"Unknown input setting: {line.split(':', 1)[0].split('=', 1)[0].strip()}")
         else:
             geometry.append(line.split())
 
-    def vector(index: int) -> tuple[float, float, float] | None:
-        if len(geometry) <= index:
+    geometry_names = {'incident_polarization', 'scattered_polarization', 'surface_normal'}
+    if geometry and geometry_names.intersection(values):
+        raise ValueError('Do not mix named geometry settings with positional geometry lines')
+
+    def vector(name: str, index: int) -> tuple[float, float, float] | None:
+        parts = values[name].replace(',', ' ').split() if name in values else (geometry[index] if len(geometry) > index else None)
+        if parts is None:
             return None
         try:
-            return tuple(float(value) for value in geometry[index][:3])
+            result = tuple(float(value) for value in parts)
         except ValueError as error:
-            raise ValueError("The first two input lines must be three-component polarization vectors") from error
+            raise ValueError(f'{name} must contain three finite numbers') from error
+        if len(result) != 3 or not all(math.isfinite(value) for value in result):
+            raise ValueError(f'{name} must contain three finite numbers')
+        return result
+
+    surface_normal = values.get('surface_normal', geometry[2][0] if len(geometry) >= 3 else None)
+    if surface_normal is not None:
+        surface_normal = surface_normal.lower()
+        if surface_normal not in {'x', 'y', 'z'}:
+            raise ValueError('surface_normal must be x, y, or z')
 
     energies_text = values.get("laser_energies", values.get("laser_energy", "0.00"))
     try:
@@ -125,10 +154,41 @@ def read_settings(path: str | Path = "input") -> Settings:
     projection = values.get('site_symmetry_projection', 'false').lower()
     if projection not in {'true', 'false'}:
         raise ValueError('site_symmetry_projection must be true or false')
+    displacement_mode = values.get('displacement_mode', 'full').lower()
+    if displacement_mode not in {'full', 'atoms', 'minimal'}:
+        raise ValueError('displacement_mode must be full, atoms, or minimal')
+    displacement_basis = values.get('displacement_basis', 'cartesian').lower()
+    if displacement_basis not in {'cartesian', 'fractional'}:
+        raise ValueError('displacement_basis must be cartesian or fractional')
+    saved_basis = values.get('saved_basis', 'false').lower()
+    if saved_basis not in {'true', 'false'}:
+        raise ValueError('saved_basis must be true or false')
+    try:
+        mode_q = float(values.get('mode_q', '0.01'))
+        minimum_frequency = float(values.get('mode_minimum_frequency', '1.0'))
+    except ValueError as error:
+        raise ValueError('mode_q and mode_minimum_frequency must be numeric') from error
+    if not math.isfinite(mode_q) or mode_q <= 0:
+        raise ValueError('mode_q must be finite and positive (Angstrom sqrt(amu))')
+    if not math.isfinite(minimum_frequency) or minimum_frequency < 0:
+        raise ValueError('mode_minimum_frequency must be finite and nonnegative (cm^-1)')
+    indices_text = values.get('mode_indices', 'auto')
+    mode_indices = None
+    if indices_text.lower() != 'auto':
+        try:
+            mode_indices = tuple(dict.fromkeys(int(i) for i in indices_text.replace(',', ' ').split()))
+        except ValueError as error:
+            raise ValueError('mode_indices must be auto or positive 1-based integers') from error
+        if not mode_indices or min(mode_indices) < 1:
+            raise ValueError('mode_indices must be auto or positive 1-based integers')
     return Settings(
-        vector(0), vector(1), geometry[2][0].lower() if len(geometry) >= 3 else None,
+        vector('incident_polarization', 0), vector('scattered_polarization', 1), surface_normal,
         energies, displacement_amplitude, hwhm, broadening_type, polarization, frequency_cutoff_cm1,
         difference_scheme, dielectric_source, projection == 'true',
+        displacement_mode, displacement_basis, values.get('equilibrium_file'), saved_basis == 'true',
+        mode_q, mode_indices, minimum_frequency,
+        values.get('mode_displacements_directory', 'mode_displacements'),
+        values.get('mode_results_directory', 'mode_results'),
     )
 
 
@@ -136,9 +196,9 @@ def write_settings(path: str | Path, settings: Settings) -> None:
     if settings.incident_polarization is None or settings.scattered_polarization is None or settings.surface_normal is None:
         raise ValueError("Geometry is required when writing input")
     lines = [
-        " ".join(f"{value:.1f}" for value in settings.incident_polarization),
-        " ".join(f"{value:.1f}" for value in settings.scattered_polarization),
-        settings.surface_normal,
+        "incident_polarization: " + " ".join(f"{value:.16g}" for value in settings.incident_polarization),
+        "scattered_polarization: " + " ".join(f"{value:.16g}" for value in settings.scattered_polarization),
+        f"surface_normal: {settings.surface_normal}",
         "laser_energies: " + " ".join(f"{energy:.2f}" for energy in settings.laser_energies),
     ]
     if settings.displacement_amplitude is not None:
@@ -152,5 +212,15 @@ def write_settings(path: str | Path, settings: Settings) -> None:
         f"difference_scheme: {settings.difference_scheme}",
         f"dielectric_source: {settings.dielectric_source}",
         f"site_symmetry_projection: {str(settings.site_symmetry_projection).lower()}",
+        f"displacement_mode: {settings.displacement_mode}",
+        f"displacement_basis: {settings.displacement_basis}",
+        f"saved_basis: {str(settings.saved_basis).lower()}",
+        f"mode_q: {settings.mode_q:g}",
+        "mode_indices: " + ('auto' if settings.mode_indices is None else ' '.join(map(str, settings.mode_indices))),
+        f"mode_minimum_frequency: {settings.mode_minimum_frequency:g}",
+        f"mode_displacements_directory: {settings.mode_displacements_directory}",
+        f"mode_results_directory: {settings.mode_results_directory}",
     ])
+    if settings.equilibrium_file is not None:
+        lines.append(f"equilibrium_file: {settings.equilibrium_file}")
     Path(path).write_text("\n".join(lines) + "\n")

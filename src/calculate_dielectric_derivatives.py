@@ -1,6 +1,7 @@
 import os
 import shutil
 import sys
+import warnings
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 
@@ -20,10 +21,10 @@ def read_diel_from_xml(xml_path, target_frequency):
 
 
 def read_dielectrics_xml(xml_path, energies):
-    """Read density-density XML once; preserve all nine named components.
+    """Read density-density XML once, preserving every printed component.
 
     Sample the nearest tabulated photon energy, without interpolation. Missing
-    transpose entries are an error, never filled by assuming reciprocity.
+    off-diagonal transpose entries are filled by reciprocity with a warning.
     """
     root = ET.parse(xml_path).getroot()
     blocks = root.findall('.//dielectricfunction')
@@ -32,25 +33,42 @@ def read_dielectrics_xml(xml_path, energies):
         selected = [b for b in blocks if not b.get('comment', '').strip()]
     if len(selected) != 1:
         raise ValueError(f'Expected one density-density dielectric block in {xml_path}')
-    grids=[];tensors=[]
+    grids=[];tensors=[];filled=[]
     for kind in ('real', 'imag'):
         array = selected[0].find(f'{kind}/array')
         if array is None:
             raise ValueError(f'Missing {kind} dielectric data in {xml_path}')
         fields = [(f.text or '').strip().lower() for f in array.findall('field')]
         expected = {'energy'} | {a+b for a in 'xyz' for b in 'xyz'}
-        if len(fields) != 10 or set(fields) != expected:
-            raise ValueError(f'{xml_path}: {kind} requires energy and all nine named tensor components')
+        if (len(fields) != len(set(fields)) or not set(fields) <= expected or
+                not {'energy', 'xx', 'yy', 'zz'} <= set(fields) or
+                any(a+b not in fields and b+a not in fields for a,b in [('x','y'),('x','z'),('y','z')])):
+            raise ValueError(f'{xml_path}: {kind} requires unique named fields: energy, xx, yy, zz, '
+                             'and at least one component of each xy/yx, xz/zx, yz/zy pair')
         rows = np.asarray([[float(v) for v in (r.text or '').split()] for r in array.findall('.//r')])
-        if rows.ndim != 2 or rows.shape[1] != 10 or not len(rows) or not np.isfinite(rows).all():
+        if rows.ndim != 2 or rows.shape[1] != len(fields) or not len(rows) or not np.isfinite(rows).all():
             raise ValueError(f'Invalid {kind} dielectric rows in {xml_path}')
         grid = rows[:, fields.index('energy')]
         if np.any(np.diff(grid) <= 0):
             raise ValueError(f'Non-increasing dielectric grid in {xml_path}')
         grids.append(grid)
-        tensors.append(rows[:, [fields.index(a+b) for a in 'xyz' for b in 'xyz']].reshape(-1,3,3))
+        columns = []
+        for a in 'xyz':
+            for b in 'xyz':
+                component = a+b
+                if component not in fields:
+                    filled.append(f'{kind} {component}={b+a}')
+                    component = b+a
+                columns.append(fields.index(component))
+        tensors.append(rows[:, columns].reshape(-1,3,3))
     if not np.array_equal(grids[0], grids[1]):
         raise ValueError(f'Real and imaginary dielectric grids differ in {xml_path}')
+    if filled:
+        warnings.warn(f'{xml_path}: not all nine dielectric components are printed. '
+                      f'Assuming reciprocity to fill {", ".join(filled)} (no complex conjugation). '
+                      'These entries are inferred, not independently calculated; '
+                      'nonreciprocal response cannot be recovered from missing components.',
+                      RuntimeWarning, stacklevel=2)
     result=[]
     for energy in energies:
         if not np.isfinite(energy) or energy < grids[0][0] or energy > grids[0][-1]:
@@ -98,7 +116,8 @@ def read_displaced_dielectrics_many(displacements, lattice, energies, directory=
 
     Keep only detached 3x3 samples: the XML reader's slices otherwise retain
     the full frequency-grid arrays for every displacement in memory.
-    No persistent cache, interpolation, or reciprocity assumption is introduced.
+    No persistent cache or interpolation is introduced. The XML reader warns
+    whenever reciprocity is needed to complete missing transpose components.
     """
     _xml_only(source)
     from spectropy_paths import displacement_root

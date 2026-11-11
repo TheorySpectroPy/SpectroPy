@@ -12,6 +12,7 @@ import yaml
 from spectropy_structure import read_structure, write_structure
 from spectropy_phonons import read_gamma_modes, align_mode_atoms
 from spectropy_symmetry import symmetry_operations, mode_representations
+from spectropy_config import read_settings
 
 
 def allowed_tensor_dimension(representations, rotations, tolerance=1e-7):
@@ -38,13 +39,18 @@ def _reference(reference):
     return "ref_poscar.vasp" if Path("ref_poscar.vasp").exists() else "CONTCAR"
 
 
-def generate(q=.01, modes=None, reference=None,
-             output="mode_displacements", minimum_frequency=1.0):
+def generate(q=None, modes=None, reference=None,
+             output=None, minimum_frequency=None):
     """Enumerate +/-Q for every Raman-active partner by default.
 
     Every selected mode has its own explicit positive and negative calculation.
     Explicit mode IDs bypass automatic activity/frequency filters.
     """
+    settings = read_settings()
+    q = settings.mode_q if q is None else q
+    modes = settings.mode_indices if modes is None else modes
+    output = settings.mode_displacements_directory if output is None else output
+    minimum_frequency = settings.mode_minimum_frequency if minimum_frequency is None else minimum_frequency
     if not np.isfinite(q) or q <= 0:
         raise ValueError("Q must be finite and positive (Angstrom sqrt(amu))")
     if not np.isfinite(minimum_frequency) or minimum_frequency < 0:
@@ -164,16 +170,18 @@ def generate(q=.01, modes=None, reference=None,
     return manifest
 
 
-def reconstruct(directory="mode_displacements", source="vasprun.xml", energies=None, output="mode_results"):
+def reconstruct(directory=None, source=None, energies=None, output=None):
     from calculate_dielectric_derivatives import read_dielectric
-    from spectropy_config import read_settings
+    settings = read_settings()
+    directory = settings.mode_displacements_directory if directory is None else directory
+    source = settings.dielectric_source if source is None else source
+    output = settings.mode_results_directory if output is None else output
     root = Path(directory)
     data = json.loads((root/"mode_manifest.json").read_text())
     if data.get("schema") != 2 or data.get("calculator") != "vasp":
         raise ValueError("Expected a schema-2 explicit VASP mode manifest; regenerate the displacement plan")
     if not np.isfinite(data["q"]) or data["q"] <= 0:
         raise ValueError("Manifest Q must be finite and positive")
-    settings = read_settings()
     if settings.difference_scheme != "central":
         raise ValueError("Collective mode tensors currently require difference_scheme: central")
     if settings.polarization != "specific":

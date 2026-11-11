@@ -15,7 +15,7 @@ def _run_in_directory(workdir: str, operation: Callable[[], None]) -> None:
         os.chdir(previous)
 
 
-def _commands(mode: str, basis: str = "cartesian") -> dict[str, tuple[str, Callable[[], None]]]:
+def _commands(mode: str | None, basis: str | None = None) -> dict[str, tuple[str, Callable[[], None]]]:
     def stage(module: str, function: str) -> Callable[[], None]:
         def run() -> None:
             getattr(importlib.import_module(module), function)()
@@ -38,7 +38,7 @@ def _commands(mode: str, basis: str = "cartesian") -> dict[str, tuple[str, Calla
 
     return {
         "displacements": (
-            descriptions[mode],
+            descriptions.get(mode, "Generate displacements using input settings."),
             displacements,
         ),
         "derivatives": (
@@ -84,15 +84,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     add_workdir(displacement_parser)
     displacement_parser.add_argument(
-        "--mode", choices=("full", "atoms", "minimal"), default="full",
+        "--mode", choices=("full", "atoms", "minimal"), default=None,
         help=(
+            "Override input displacement_mode (default: full). "
             "full: all atoms and +/- basis axes; atoms: all axes for "
             "symmetry-inequivalent atoms; minimal: site-symmetry-reduced "
             "set including mixed directions in the selected basis."
         ),
     )
-    displacement_parser.add_argument("--basis", choices=("cartesian", "fractional"), default="cartesian",
-                                     help="Basis for displacement candidates; lengths are always in Angstrom.")
+    displacement_parser.add_argument("--basis", choices=("cartesian", "fractional"), default=None,
+                                     help="Override input displacement_basis (default: cartesian); lengths are in Angstrom.")
     for name, help_text in (
         ("symmetry", "Write atom-to-atom symmetry-operation matrices."),
         ("derivatives", "Calculate dielectric derivatives."),
@@ -103,21 +104,22 @@ def main(argv: list[str] | None = None) -> int:
         add_workdir(command_parser)
         if name == "derivatives":
             command_parser.add_argument("--difference", choices=("central", "forward"), default=None, help="Override input difference_scheme (default: central)")
-            command_parser.add_argument("--equilibrium-file", "--equilibrium-vasprun", dest="equilibrium_vasprun", help="Optional external reference in XML format; defaults to displacements/ra_pos_equilibrium/vasprun.xml")
-            command_parser.add_argument("--saved-basis", action="store_true", help="Optional saved reconstruction lookup; manual reconstruction is the default")
+            command_parser.add_argument("--equilibrium-file", "--equilibrium-vasprun", dest="equilibrium_vasprun", help="Override input equilibrium_file; otherwise use the generated equilibrium XML")
+            command_parser.add_argument("--saved-basis", action=argparse.BooleanOptionalAction, default=None,
+                                        help="Override input saved_basis (default: false)")
 
     mode_displacements = subparsers.add_parser("mode-displacements", help="Generate explicit +/- displacements for every Raman-active mode.")
     add_workdir(mode_displacements)
-    mode_displacements.add_argument("--modes", nargs="+", type=int, help="Explicit 1-based indices overriding activity/cutoff selection.")
-    mode_displacements.add_argument("--q", type=float, default=.01, help="Normal coordinate in Angstrom sqrt(amu), matching Liangbo's raman_dis_mode.")
-    mode_displacements.add_argument("--output", default="mode_displacements")
-    mode_displacements.add_argument("--minimum-frequency", type=float, default=1.0, help="Default automatic selection excludes frequencies below this cm^-1.")
+    mode_displacements.add_argument("--modes", nargs="+", type=int, help="Override input mode_indices with 1-based indices (default: automatic activity selection).")
+    mode_displacements.add_argument("--q", type=float, default=None, help="Override input mode_q, in Angstrom sqrt(amu) (default: 0.01).")
+    mode_displacements.add_argument("--output", default=None, help="Override input mode_displacements_directory (default: mode_displacements).")
+    mode_displacements.add_argument("--minimum-frequency", type=float, default=None, help="Override input mode_minimum_frequency; automatic selection requires frequencies above this cm^-1 (default: 1.0).")
     mode_tensors = subparsers.add_parser("mode-tensors", help="Reconstruct mode tensors directly from collective displaced dielectric tensors.")
     add_workdir(mode_tensors)
-    mode_tensors.add_argument("--directory", default="mode_displacements")
-    mode_tensors.add_argument("--output", default="mode_results")
-    mode_tensors.add_argument("--source", choices=("vasprun.xml",), default="vasprun.xml")
-    mode_tensors.add_argument("--energies", nargs="+", type=float)
+    mode_tensors.add_argument("--directory", default=None, help="Override input mode_displacements_directory (default: mode_displacements).")
+    mode_tensors.add_argument("--output", default=None, help="Override input mode_results_directory (default: mode_results).")
+    mode_tensors.add_argument("--source", choices=("vasprun.xml",), default=None, help="Override input dielectric_source (only vasprun.xml).")
+    mode_tensors.add_argument("--energies", nargs="+", type=float, help="Override input laser_energies (default: 0.00 eV).")
 
     args = parser.parse_args(argv)
     if args.command is None:
@@ -143,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
         _run_in_directory(args.workdir, derive)
 
     else:
-        commands = _commands(getattr(args, "mode", "full"), getattr(args, "basis", "cartesian"))
+        commands = _commands(getattr(args, "mode", None), getattr(args, "basis", None))
         _run_in_directory(args.workdir, commands[args.command][1])
     return 0
 

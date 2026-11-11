@@ -62,9 +62,11 @@ def write_derivative_outputs(energy, structure, raw, corrected=None, directory="
         write(f"corrected_epsilon_derivative_{energy:.2f}", corrected)
 
 
-def run_derivatives(input_path="input", use_saved_basis=False,
+def run_derivatives(input_path="input", use_saved_basis=None,
                     difference_scheme=None, equilibrium_vasprun=None):
     settings = read_settings(input_path)
+    use_saved_basis = settings.saved_basis if use_saved_basis is None else use_saved_basis
+    equilibrium_vasprun = settings.equilibrium_file if equilibrium_vasprun is None else equilibrium_vasprun
     site_projection = getattr(settings, 'site_symmetry_projection', False)
     dielectric_source = settings.dielectric_source
     dielectric_filename = 'vasprun.xml'

@@ -72,16 +72,17 @@ unnormalized broadened intensity. The PNG is normalized for display.
 
 ## Understanding `input`
 
-The first three lines specify the scattering geometry. Named settings make the
-calculation reproducible:
+The geometry and calculation settings are all named entries:
 
 ```text
-1.0 0.0 0.0                 ! incident polarization
-1.0 0.0 0.0                 ! scattered polarization
-z                           ! surface normal
+incident_polarization: 1 0 0
+scattered_polarization: 1 0 0
+surface_normal: z
 laser_energies: 1.96        ! eV
 displacement_amplitude: 0.03 ! Angstrom
-polarization: average       ! write orientation-averaged intensity too
+displacement_mode: full
+displacement_basis: cartesian
+polarization: average       ! write summed polarization-channel intensity too
 broadening_fwhm: 1.0        ! cm-1
 broadening_type: lorentzian
 ```
@@ -106,24 +107,24 @@ phonopy --symmetry -c CONTCAR > symmetry
 
 ### 2. Generate displaced structures
 
-Choose one displacement strategy:
+Choose the displacement strategy and basis in `input`:
+
+```text
+displacement_mode: full      ! full, atoms, or minimal
+displacement_basis: cartesian ! cartesian or fractional
+```
+
+`full` displaces every atom along three axes; `atoms` keeps atomic
+representatives; `minimal` also reduces directions by site symmetry. Then run:
 
 ```bash
-# Six +/- Cartesian displacements for every atom.
-spectropy displacements --mode full
-
-# Six +/- Cartesian displacements for one representative of each
-# symmetry-equivalent atom set.
-spectropy displacements --mode atoms
-
-# Site-symmetry-reduced set using Cartesian candidates.
-spectropy displacements --mode minimal
+spectropy displacements
 ```
 
 Every mode writes `atomic_displacement`, `displacements.dat`,
 `displacements/pos_atom*`, and `displacements/ra_pos_atom*/POSCAR`, plus the
 undisplaced `displacements/ra_pos_equilibrium/POSCAR`.
-Use `--basis fractional` with any mode to select fractional candidates.
+Use `displacement_basis: fractional` with any mode to select fractional candidates.
 
 SpectroPy does not create `INCAR`, `KPOINTS`, `POTCAR`, job scripts, or VASP
 commands. Copy or generate the input files appropriate for your DFT code in
@@ -147,7 +148,7 @@ For every value in `laser_energies`, this writes:
 - `raw_directional_derivative_<energy>.json`: raw measured-direction responses.
 
 Denoising is optional via `site_symmetry_projection: true`; see the
-[main README](../../README.md#4-calculate-dielectric-derivatives).
+[main README](../../README.md#symmetry-denoising-and-raman-tensors).
 
 ### 4. Calculate and plot the spectrum
 
