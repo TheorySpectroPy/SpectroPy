@@ -4,6 +4,8 @@ Provide consistently ordered CONTCAR (VASP), plus Phonopy
 band.yaml, irreps.yaml and symmetry. No electronic results are bundled.
 Use the neighboring input file for mode selection, amplitude, energies, output
 directories, and xx polarization.
+Place your optical INCAR, KPOINTS, and POTCAR in the working directory before
+generation; SpectroPy automatically symlinks them into each displacement directory.
 
     spectropy mode-displacements
 
@@ -25,10 +27,8 @@ and frequency filtering. Every selected mode requires both signs.
 The POSCAR_mode6a/b files and mode_index columns follow Liangbo's
 raman_dis_mode conventions. No Fortran code is called by SpectroPy.
 
-Stage your optical INCAR, KPOINTS and POTCAR from the calculation directory:
-
-    bash mode_displacements/runRA
-
+Verify the generated input symlinks. Missing inputs are reported; no separate
+runRA staging script is generated or needed.
 Run VASP externally in each mode_displacements/ra_POSCAR_mode*/ directory.
 Do not relax displaced structures. SpectroPy does not submit jobs or choose
 electronic convergence settings.

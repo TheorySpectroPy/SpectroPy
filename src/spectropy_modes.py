@@ -13,6 +13,7 @@ from spectropy_structure import read_structure, write_structure
 from spectropy_phonons import read_gamma_modes, align_mode_atoms
 from spectropy_symmetry import symmetry_operations, mode_representations
 from spectropy_config import read_settings
+from spectropy_paths import link_vasp_inputs
 
 
 def allowed_tensor_dimension(representations, rotations, tolerance=1e-7):
@@ -106,6 +107,9 @@ def generate(q=None, modes=None, reference=None,
     if root.exists():
         raise FileExistsError(f"Use a fresh mode-displacement directory: {root}")
     root.mkdir(parents=True)
+    directories = [root / f'ra_POSCAR_mode{int(mode)+1}{suffix}'
+                   for group, _ in planned for mode in group for suffix in ('a', 'b')]
+    link_vasp_inputs(directories)
     manifest = dict(schema=2, calculator="vasp",
                     q=q, q_units="Angstrom sqrt(amu)", reference=str(Path(reference).resolve()),
                     reference_sha256=hashlib.sha256(Path(reference).read_bytes()).hexdigest(),
@@ -135,7 +139,7 @@ def generate(q=None, modes=None, reference=None,
                           max_atomic_displacement_angstrom=float(np.max(np.linalg.norm(displacement, axis=1))))
             for sign, suffix in [(1,"a"),(-1,"b")]:
                 directory = root/f"ra_POSCAR_{stem}{suffix}"
-                directory.mkdir()
+                directory.mkdir(exist_ok=True)
                 fractional = structure.fractional_positions + sign*displacement @ np.linalg.inv(structure.lattice)
                 write_structure(directory/"POSCAR", structure, fractional)
                 # Fortran-compatible interchange files: Cartesian positions,
@@ -156,15 +160,6 @@ def generate(q=None, modes=None, reference=None,
         "Both signs of every selected mode are independently calculated.\n"
         "a = positive, b = negative. mode_index columns are mode, cm^-1, Q.\n"
         "Never relax a mode-displaced optical structure. This is central difference.\n")
-    (root/"runRA").write_text(
-        "#!/bin/bash\nset -euo pipefail\n# Directories already exist. Stage only calculator inputs, never run DFT here.\n"
-        'cd "$(dirname "$0")"\n'
-        "for d in ra_POSCAR_mode*; do\n"
-        '  [ -d "$d" ] || continue\n'
-        '  for f in INCAR KPOINTS POTCAR; do\n'
-        '    [ ! -f "../$f" ] || cp "../$f" "$d/"\n'
-        "  done\n"
-        "done\n")
     print(f"Generated {len(list(root.glob('ra_POSCAR_mode*')))} signed jobs for "
           f"{sum(len(g['modes']) for g in manifest['groups'])} mode partners in {root}")
     return manifest

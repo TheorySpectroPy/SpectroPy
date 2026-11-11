@@ -115,25 +115,35 @@ spectropy displacements
 
 | Output file | Format and contents |
 | --- | --- |
-| `ref_poscar.vasp` | VASP POSCAR format: equilibrium lattice, species, and fractional atomic positions. |
+| `ref_poscar.vasp` | VASP POSCAR format: equilibrium reference snapshot for atom registration; the reader can fall back to `CONTCAR`. |
 | `displacements.dat` | Plain text: mode/basis header, displacement count, then atom labels, 1-based indices, and fractional displacement vectors; ends with the displaced-atom list. |
-| `atomic_displacement` | Fortran-compatible text layout: physical step lengths, displaced-atom list, and indexed fractional displacement vectors. |
-| `fractional_basis.json` (minimal only) | JSON: reconstruction bases, inverse matrices, and symmetry mappings for each representative atom. |
-| `displacements/pos_atom*` | VASP POSCAR format: one structure per displacement. |
-| `displacements/ra_pos_atom*/POSCAR` | The same displaced structures, placed in individual VASP calculation directories. |
+| `atomic_displacement` | Optional-use Fortran-format export of the displacement list; not read by SpectroPy. |
+| `fractional_basis.json` (opt-in) | JSON reconstruction cache, generated only for `minimal` with `saved_basis: true`; not needed by default. |
+| `displacements/pos_atom*` | Standalone POSCAR-format exports; duplicate the calculation-directory structures and are not read by SpectroPy. |
+| `displacements/ra_pos_atom*/POSCAR` | Displaced structures used for the individual VASP calculations. |
 | `displacements/ra_pos_equilibrium/POSCAR` | Unchanged copy of the original `CONTCAR`, for the undisplaced optical calculation. |
+| `displacements/ra_pos_*/{INCAR,KPOINTS,POTCAR}` | Relative symbolic links to supplied inputs in the working directory, including the equilibrium directory. |
 
 Displacement vectors in the text files are fractional even when candidate
 directions are selected in the Cartesian basis; step lengths are in Å.
 
+The essential generated inputs are `displacements.dat` and the per-calculation
+`POSCAR` files. Keep the original `CONTCAR` and symmetry/phonon inputs too.
+The undisplaced response is needed for forward differences, not central
+differences. The Fortran and standalone POSCAR exports are not extra calculations.
+
 Use `displacement_mode: full` to calculate every atom along three basis axes;
 `atoms` reduces only the atoms, and `minimal` also reduces directions.
 
-### Step 3: Prepare VASP Calculation Directories
+### Step 3: Check VASP Calculation Directories
 
-Place your `INCAR`, `KPOINTS`, and `POTCAR` in every `displacements/ra_pos_*`
-directory. SpectroPy prepares the structures, but does not populate these
-electronic-structure inputs or select convergence settings.
+Place `INCAR`, `KPOINTS`, and `POTCAR` in the working directory before Step 2;
+SpectroPy automatically symlinks each supplied file into every calculation
+directory. Missing inputs produce a warning; supply them before running VASP.
+Existing matching links are retained, and conflicting files or links are never
+overwritten. Verify the links and optical settings before submission. Editing
+a shared input changes it for every linked directory, so keep these inputs
+fixed during a run. SpectroPy does not choose convergence settings or launch VASP.
 
 ### Step 4: Run VASP
 
@@ -208,7 +218,7 @@ Settings are named entries in `input`; their order does not matter:
 | `broadening_hwhm` | `1.0` | Half-width at half-maximum in cm⁻¹; FWHM is twice this value. |
 | `broadening_type` | `lorentzian` | `lorentzian` or `gaussian` (also `l` or `g`). |
 | `equilibrium_file` | Automatic | Optional equilibrium XML path for forward differences; otherwise `displacements/ra_pos_equilibrium/vasprun.xml`. |
-| `saved_basis` | `false` | Reuse validated `fractional_basis.json` when present instead of rebuilding the basis. |
+| `saved_basis` | `false` | For `minimal`, generate `fractional_basis.json` and reuse it after validation; otherwise reconstruct without a cache. |
 
 `full` and `atoms` accept three displacement lengths, one per selected basis
 axis; `minimal` requires a common length. Accepted aliases are `laser_energy` and `frequency_cutoff`.
@@ -248,8 +258,10 @@ All three support Cartesian or fractional candidates. SpectroPy generates
 displacements itself; Phonopy supplies symmetry information, not the
 displacement list. Both bases use the same ordered candidate/orbit search.
 Counts and finite-step errors can differ; the search does not guarantee
-globally optimal conditioning. Minimal mode records its basis and transformations
-in `fractional_basis.json` for either choice of candidate basis.
+globally optimal conditioning. With `saved_basis: true`, minimal mode records
+its basis and transformations in `fractional_basis.json` for either candidate
+basis. By default this file is neither generated nor read. Existing cache files
+are left untouched when the setting is disabled.
 
 For a Cartesian unit direction $\mathbf u$, path $\delta\mathbf r(\mu)=s_\mu\mathbf u$,
 and physical step $\Delta$, evaluated at equilibrium:
@@ -344,8 +356,9 @@ $$
 `mode_q` is in Å$\sqrt{\mathrm{amu}}$, not a maximum atomic displacement;
 it is independent of the atomic `displacement_amplitude` setting.
 The generated directory contains `mode_manifest.json`, `mode_index`,
-`POSCAR_mode*`, and `ra_POSCAR_mode*/POSCAR`. Its `runRA` script stages available
-VASP inputs; it does not launch calculations.
+`POSCAR_mode*`, and `ra_POSCAR_mode*/POSCAR`. Supplied `INCAR`, `KPOINTS`, and
+`POTCAR` files are symlinked automatically into every mode-displacement directory;
+no separate staging script is generated or needed. Calculations are run externally.
 
 `mode-tensors` validates displaced geometries and requires both signs, central
 differences, and `polarization: specific`. It writes

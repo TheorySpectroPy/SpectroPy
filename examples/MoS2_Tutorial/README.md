@@ -126,9 +126,10 @@ Every mode writes `atomic_displacement`, `displacements.dat`,
 undisplaced `displacements/ra_pos_equilibrium/POSCAR`.
 Use `displacement_basis: fractional` with any mode to select fractional candidates.
 
-SpectroPy does not create `INCAR`, `KPOINTS`, `POTCAR`, job scripts, or VASP
-commands. Copy or generate the input files appropriate for your DFT code in
-each generated calculation directory, then run the calculations yourself.
+Place your optical `INCAR`, `KPOINTS`, and `POTCAR` in the working directory
+before generation. SpectroPy symlinks supplied files into each displaced and
+equilibrium directory, warns about missing inputs, and refuses to replace
+conflicting inputs. It does not choose their contents, submit jobs, or run VASP.
 
 ### 3. Evaluate dielectric derivatives
 

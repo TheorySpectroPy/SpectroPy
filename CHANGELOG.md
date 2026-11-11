@@ -2,6 +2,13 @@
 
 ## Unreleased — supported workflow simplification
 
+- Supplied `INCAR`, `KPOINTS`, and `POTCAR` inputs are automatically symlinked
+  into atomic, equilibrium, and collective-mode calculation directories.
+  Existing inputs are never replaced; missing inputs produce a warning.
+- `fractional_basis.json` generation is opt-in with `saved_basis: true`.
+  Default reconstruction does not need or read it. No existing cache is deleted.
+- Collective-mode generation no longer writes the redundant `runRA` input-copy
+  script; automatic symlinks replace that staging step.
 - Settings for displacement selection/basis, mode generation, and optional
   reference/basis/output paths can be kept in `input`. Explicit CLI options
   override the file for one invocation; omitted options use the file's settings.
