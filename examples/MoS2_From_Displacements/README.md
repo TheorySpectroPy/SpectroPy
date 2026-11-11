@@ -101,13 +101,16 @@ the requested length. The output includes:
 ref_poscar.vasp
 displacements.dat
 atomic_displacement
-fractional_basis.json
 symmetry_operation_matrices
 displacements/
   pos_atom...                 # generated structure files
   ra_pos_atom.../
     POSCAR                   # structure to use for that optical calculation
+    INCAR, KPOINTS, POTCAR   # symlinks, when supplied before generation
 ```
+
+`fractional_basis.json` is generated only when `saved_basis: true` is enabled.
+The default reconstructs the basis directly and needs no cache.
 
 The ellipses illustrate naming patterns, not literal names. Read the actual
 names and displacements in `displacements.dat`; do not hard-code their count.
@@ -120,13 +123,16 @@ with different settings after calculating their dielectric responses.
 
 ### A. Run your own optical calculations
 
-For each `displacements/ra_pos_atom*/` directory:
+Provide `INCAR`, `KPOINTS`, and `POTCAR` in `RUN_DIR` before Step 3 to have them
+automatically symlinked into all displaced and equilibrium directories.
+For each `displacements/ra_pos_*/` directory:
 
 1. Keep its generated `POSCAR` unchanged. This is a frozen displacement, not a
    new structure to relax.
-2. Supply your independently chosen VASP optical inputs and licensed potentials.
-   SpectroPy does not create `INCAR`, `KPOINTS`, `POTCAR`, or submission scripts.
-   Use consistent electronic settings and potentials across the displaced set.
+2. Verify the symlinks to your chosen optical inputs and licensed potentials.
+   If inputs were absent during generation, supply the missing inputs before
+   running VASP. SpectroPy does not choose their contents or generate submission
+   scripts; keep shared inputs fixed throughout the displaced set.
 3. Run VASP through your usual local or cluster launcher. No specific `srun`,
    `mpirun`, executable path, or resource allocation is prescribed here.
 4. Verify electronic convergence and successful completion. Confirm that
@@ -204,7 +210,8 @@ symmetry consistency; it cannot detect or remove every numerical error. The
 derivative files include the cell-volume/(4π) factor; do not multiply it again.
 
 The default path reconstructs direction bases explicitly. The optional
-`saved_basis: true` setting validates and reuses `fractional_basis.json` when present.
+`saved_basis: true` setting enables cache generation in Step 3 and validated
+reuse during derivative processing. It is not required for this tutorial.
 Changing the displacement length requires new dielectric calculations, not
 just editing metadata.
 

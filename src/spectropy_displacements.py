@@ -12,6 +12,7 @@ import yaml
 from process_symmetry import read_site_symmetries, read_symmetry_file
 from reconstruct_dielectric_derivatives import build_fractional_bases, write_fractional_bases
 from spectropy_config import read_settings
+from spectropy_paths import link_vasp_inputs
 from spectropy_structure import Structure, read_structure, write_structure
 
 
@@ -296,9 +297,13 @@ def run_displacements(
     structure = read_structure(contcar_path)
     amplitude = _amplitude(input_path)
     displacements = generate_displacements(mode, structure, contcar_path, symmetry_path, amplitude, basis=basis)
+    root = Path('displacements') if Path.cwd().name != 'displacements' else Path('.')
+    directories = [root / f'ra_pos_{d.name}' for d in displacements]
+    directories.append(root / 'ra_pos_equilibrium')
+    link_vasp_inputs(directories)
     write_structure("ref_poscar.vasp", structure)
     write_displacements("displacements.dat", displacements, structure, _header(mode, basis))
-    if mode == "minimal":
+    if mode == "minimal" and settings.saved_basis:
         bases = build_fractional_bases(read_displacements("displacements.dat"), structure.lattice, read_site_symmetries(symmetry_path))
         write_fractional_bases("fractional_basis.json", bases)
         print("Saved fractional reconstruction bases to fractional_basis.json.")
