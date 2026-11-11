@@ -32,6 +32,8 @@ cd examples/MoS2_Tutorial
 ## Included files
 
 - `CONTCAR`, `INCAR`, and `KPOINTS`: VASP structure and example input files.
+  The shared tutorial uses `ISYM = -1` for displaced-cell optical calculations
+  to avoid imposed symmetry in the off-diagonal dielectric response.
 - `band.yaml`: Gamma-point phonon modes from Phonopy.
 - `dielectric_derivatives_1.96`: precomputed SpectroPy dielectric derivatives
   at a 1.96 eV laser energy, retained under its historical filename.
@@ -52,7 +54,8 @@ spectropy plot
 ```
 
 `input` selects a 1.96 eV laser, parallel in-plane incident/scattered
-polarizations, polarization averaging, and a 1.0 cm⁻¹ Lorentzian width. The
+polarizations, polarization averaging, and a 1.0 cm⁻¹ Lorentzian FWHM
+(0.5 cm⁻¹ HWHM in this historical example). The
 commands create:
 
 - `Raman_tensor`
@@ -84,9 +87,9 @@ broadening_type: lorentzian
 ```
 
 `laser_energies` may contain multiple space-separated values. Omitting it
-uses `0.00 eV`, the static-limit case. `displacement_amplitude` is read by all
-three displacement modes; when it is absent, `full` and `atoms` use 0.01 Å,
-while `minimal` uses 0.03 Å.
+uses `0.00 eV`, the static-limit case. `displacement_amplitude` defaults to
+0.03 Å in all three modes. The legacy `broadening_fwhm: 1.0` here is equivalent
+to `broadening_hwhm: 0.5`; new inputs should use HWHM and never specify both.
 
 ## Full calculation workflow
 
@@ -113,16 +116,18 @@ spectropy displacements --mode full
 # symmetry-equivalent atom set.
 spectropy displacements --mode atoms
 
-# Phonopy's smallest site-symmetry-reduced displacement set.
+# Site-symmetry-reduced set using Cartesian candidates.
 spectropy displacements --mode minimal
 ```
 
-Every mode writes `atomic_displacement`, `displacements.dat`, `pos_atom*`,
-and `ra_pos_atom*/POSCAR`.
+Every mode writes `atomic_displacement`, `displacements.dat`,
+`displacements/pos_atom*`, and `displacements/ra_pos_atom*/POSCAR`, plus the
+undisplaced `displacements/ra_pos_equilibrium/POSCAR`.
+Use `--basis fractional` with any mode to select fractional candidates.
 
 SpectroPy does not create `INCAR`, `KPOINTS`, `POTCAR`, job scripts, or VASP
 commands. Copy or generate the input files appropriate for your DFT code in
-each `ra_pos_atom*` directory, then run the calculations yourself.
+each generated calculation directory, then run the calculations yourself.
 
 ### 3. Evaluate dielectric derivatives
 
@@ -139,6 +144,10 @@ For every value in `laser_energies`, this writes:
   displacement.
 - `epsilon_derivative_<energy>`: the assembled complex dielectric derivatives
   used by the spectrum stage.
+- `raw_directional_derivative_<energy>.json`: raw measured-direction responses.
+
+Denoising is optional via `site_symmetry_projection: true`; see the
+[main README](../../README.md#4-calculate-dielectric-derivatives).
 
 ### 4. Calculate and plot the spectrum
 

@@ -2,7 +2,6 @@
  Staring parameters
  ISTART = 1
  ICHARG = 1
- LSCALAPACK = .FALSE.
 
  Electronic relaxation
  PREC = Accurate
@@ -11,8 +10,6 @@
  ALGO = Fast
  EDIFF = 1E-08
  NELM = 100
- NELMIN = 2
- NELMDL = -5
 
  Ionic relaxation
  EDIFFG = -0.001
@@ -23,7 +20,7 @@
 
  DOS related values
  ISMEAR = 0
- SIGMA = 0.001
+ SIGMA = 0.01
  
  LCHARG= .FALSE.
  LWAVE =.FALSE.
@@ -33,6 +30,7 @@
  NEDOS = 50001
  OMEGAMAX = 50
  LOPTICS = .TRUE.  
+ ISYM = -1
 
  NPAR = 4
  KPAR = 4
