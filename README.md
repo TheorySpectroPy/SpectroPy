@@ -66,8 +66,8 @@ Create a new directory for your Raman calculation. Inside this directory, you wi
 | --- | --- |
 | `CONTCAR` | Relaxed VASP structure. |
 | `band.yaml` | Phonopy Gamma-point frequencies and mass-weighted eigenvectors. |
-| `irreps.yaml` (optional) | Phonon symmetry labels. |
-| `symmetry` | Phonopy YAML symmetry output; required for reduced displacements or denoising. |
+| `irreps.yaml` | Phonon symmetry labels for the plots. |
+| `symmetry` | Phonopy YAML symmetry output. |
 | `INCAR`, `KPOINTS`, `POTCAR` | VASP inputs to use for the finite displacement calculations. |
 | `input` | Experimental geometry and SpectroPy settings, as below. |
 
@@ -92,8 +92,7 @@ Here, the geometry selects xy polarization with surface normal z. The energies
 select static and 1.96 eV responses; `minimal`, `cartesian`, and `0.01` select
 symmetry-reduced directions with a 0.01 Å step. Central differences use ± pairs,
 projection enables denoising, and Lorentzian peaks have a 1 cm⁻¹ half-width.
-The step is illustrative, not convergence-tested. Each stage reads `input`;
-omitted settings use the defaults below.
+The step is illustrative, not convergence-tested. Each stage reads `input`.
 
 ### Step 2: Generate Displacements
 
@@ -113,46 +112,41 @@ spectropy displacements
 
 **Input**: `CONTCAR`, `input`, and `symmetry` for the reduced example above.
 
-| Output file | Format and contents |
+The main generated files have this layout (`...` represents other displacements):
+
+```text
+calculation/
+├── displacements.dat
+├── ref_poscar.vasp
+└── displacements/
+    ├── ra_pos_atom1a/
+    │   ├── POSCAR
+    │   ├── INCAR   -> ../../INCAR
+    │   ├── KPOINTS -> ../../KPOINTS
+    │   └── POTCAR  -> ../../POTCAR
+    ├── ...
+    └── ra_pos_equilibrium/
+        ├── POSCAR
+        └── ...    (same three input links)
+```
+
+| File | Format and contents |
 | --- | --- |
-| `ref_poscar.vasp` | VASP POSCAR format: equilibrium reference snapshot for atom registration; the reader can fall back to `CONTCAR`. |
-| `displacements.dat` | Plain text: mode/basis header, displacement count, then atom labels, 1-based indices, and fractional displacement vectors; ends with the displaced-atom list. |
-| `atomic_displacement` | Optional-use Fortran-format export of the displacement list; not read by SpectroPy. |
-| `fractional_basis.json` (opt-in) | JSON reconstruction cache, generated only for `minimal` with `saved_basis: true`; not needed by default. |
-| `displacements/pos_atom*` | Standalone POSCAR-format exports; duplicate the calculation-directory structures and are not read by SpectroPy. |
-| `displacements/ra_pos_atom*/POSCAR` | Displaced structures used for the individual VASP calculations. |
-| `displacements/ra_pos_equilibrium/POSCAR` | Unchanged copy of the original `CONTCAR`, for the undisplaced optical calculation. |
-| `displacements/ra_pos_*/{INCAR,KPOINTS,POTCAR}` | Relative symbolic links to supplied inputs in the working directory, including the equilibrium directory. |
+| `displacements.dat` | Plain text: selection metadata, atom indices, and fractional displacement vectors. |
+| `ref_poscar.vasp`, `POSCAR` | VASP structure format: equilibrium reference or individual displaced structures. |
+| `INCAR`, `KPOINTS`, `POTCAR` | Symlinks to your shared optical inputs, not copies. |
 
 Displacement vectors in the text files are fractional even when candidate
 directions are selected in the Cartesian basis; step lengths are in Å.
 
-The essential generated inputs are `displacements.dat` and the per-calculation
-`POSCAR` files. Keep the original `CONTCAR` and symmetry/phonon inputs too.
-The undisplaced response is needed for forward differences, not central
-differences. The Fortran and standalone POSCAR exports are not extra calculations.
-
-Use `displacement_mode: full` to calculate every atom along three basis axes;
-`atoms` reduces only the atoms, and `minimal` also reduces directions.
-
-### Step 3: Check VASP Calculation Directories
-
-Place `INCAR`, `KPOINTS`, and `POTCAR` in the working directory before Step 2;
-SpectroPy automatically symlinks each supplied file into every calculation
-directory. Missing inputs produce a warning; supply them before running VASP.
-Existing matching links are retained, and conflicting files or links are never
-overwritten. Verify the links and optical settings before submission. Editing
-a shared input changes it for every linked directory, so keep these inputs
-fixed during a run. SpectroPy does not choose convergence settings or launch VASP.
-
-### Step 4: Run VASP
+### Step 3: Run VASP
 
 This is the main computational step. You must now run VASP in each of the
 `displacements/ra_pos_*` subdirectories that were just created. This is your
 responsibility and will depend on your specific computer or cluster environment.
 Calculate the dielectric response without relaxing the displaced structures.
 
-### Step 5: Calculate Dielectric Derivatives
+### Step 4: Calculate Dielectric Derivatives
 
 Once all VASP jobs are complete:
 
@@ -163,7 +157,18 @@ spectropy derivatives
 SpectroPy collects the displaced `vasprun.xml` files into `displacements/vasprun/`
 and parses each once for all requested laser energies.
 
-### Step 6: Calculate the Final Spectrum
+| Output (`<E>` is the laser energy in eV) | Format and contents |
+| --- | --- |
+| `epsilon_derivative_<E>` | Text: reconstructed, denoised dielectric derivatives for every atom, including symmetry-equivalent atoms and directions; three Cartesian 3×3 slices per atom, with real and imaginary parts. |
+| `corrected_epsilon_derivative_<E>` | Text: explicitly named copy of the same denoised derivatives. |
+| `raw_directional_derivative_<E>.json` | JSON: raw measured-direction derivatives, displacement vectors, step lengths, and sign provenance. |
+| `dielectric_tensor_<E>` | Text: dielectric tensors sampled from the displacement calculations. |
+
+For this example, the reconstructed files are `epsilon_derivative_0.00` and
+`epsilon_derivative_1.96`, alongside their `corrected_` copies used by the
+spectrum stage.
+
+### Step 5: Calculate the Final Spectrum
 
 ```bash
 spectropy spectrum
@@ -175,25 +180,14 @@ SpectroPy combines the atomic derivatives with the phonon eigenvectors
 
 | Output (`<E>` is the laser energy in eV) | Contents |
 | --- | --- |
-| `dielectric_tensor_<E>` | Dielectric tensors for the displacements. |
-| `raw_directional_derivative_<E>.json` | Raw derivatives in measured displacement directions, with direction vectors and sign provenance. |
-| `epsilon_derivative_<E>` | Reconstructed Cartesian atomic derivatives; denoised when enabled. |
-| `corrected_epsilon_derivative_<E>` | Additional denoised derivative file, when enabled. |
 | `Raman_tensor_<E>eV` | Complex Raman tensor for each vibrational mode. |
 | `Raman_intensity_complex_<E>eV` | Frequencies, intensities, and available symmetry labels for the chosen polarization. |
 | `Raman_intensity_complex_broadening_<E>eV` | Unnormalized, two-column broadened spectrum. |
 
-The atomic spectrum stage also writes `raw_` tensor/intensity files and, with
-denoising enabled, `corrected_` files. Unprefixed files select the active result
-used by the plotter. Existing results are not deleted when denoising is disabled.
+This example also saves `raw_` and `corrected_` tensor/intensity files.
+The unprefixed files used by the plotter contain the denoised result.
 
 ![Example Raman Spectrum Plot](docs/images/Raman_plot_MoS2.png)
-
-| Example | Starting point |
-| --- | --- |
-| [MoS2_Tutorial](examples/MoS2_Tutorial/README.md) | Bundled derivative data: calculate tensors and spectra. |
-| [MoS2_From_Displacements](examples/MoS2_From_Displacements/README.md) | Detailed earlier-stage walkthrough; structure, phonon, and raw dielectric bundles are placeholders, not yet supplied. |
-| [MoS2_Mode_Displacements](examples/MoS2_Mode_Displacements/README.md) | Displace collective Raman-active modes instead of individual atoms. |
 
 ## Advanced Usage
 
@@ -228,6 +222,28 @@ Paths are relative to the working directory. Changing `input` does not modify
 existing structures or results: regenerate displacements in a fresh directory
 to change their length, selection, or basis. Derivative analysis uses the
 recorded displacement metadata, not a newly edited selection setting.
+
+### Auxiliary Files and Optional Behavior
+
+| File | Purpose |
+| --- | --- |
+| `fractional_basis.json` | Optional JSON reconstruction cache, generated and used only with `saved_basis: true` in minimal mode. |
+| `atomic_displacement` | Fortran-format export of the displacement list; generated, but not read by SpectroPy. |
+| `displacements/pos_atom*` | Standalone POSCAR exports duplicating the calculation-directory structures; not read by SpectroPy. |
+
+Only `displacements.dat` and the per-calculation `POSCAR` files are essential
+generated inputs. Keep the original `CONTCAR` and symmetry/phonon inputs too.
+Atom registration prefers `ref_poscar.vasp` but can fall back to `CONTCAR`.
+`irreps.yaml` supplies labels and can be omitted for atomic-tensor calculations.
+The equilibrium response is required for forward differences, not central ones.
+
+Input symlinks are created for supplied files. Missing inputs produce a warning;
+matching links are retained, and conflicting files or links are never overwritten.
+Supply any missing inputs before running VASP.
+
+Disabling `site_symmetry_projection` selects the raw result for the unprefixed
+outputs. Existing corrected files are not deleted; only the active selection
+changes when the analysis is rerun.
 
 ### Automating Energy Scans
 
@@ -395,6 +411,14 @@ command accepts `--version`. `--equilibrium-vasprun` is an alias for
 `--equilibrium-file`. `spectropy symmetry` writes equivalent-atom mappings to
 `symmetry_operation_matrices`; `spectrum` and `plot` use their `input` settings
 without additional scientific CLI options.
+
+### Examples
+
+| Example | Starting point |
+| --- | --- |
+| [MoS2_Tutorial](examples/MoS2_Tutorial/README.md) | Bundled derivative data: calculate tensors and spectra. |
+| [MoS2_From_Displacements](examples/MoS2_From_Displacements/README.md) | Detailed earlier-stage walkthrough; structure, phonon, and raw dielectric bundles are placeholders, not yet supplied. |
+| [MoS2_Mode_Displacements](examples/MoS2_Mode_Displacements/README.md) | Displace collective Raman-active modes instead of individual atoms. |
 
 ## Additional Utilities
 
