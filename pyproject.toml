@@ -41,7 +41,7 @@ py-modules = [
     "process_symmetry",
     "reconstruct_dielectric_derivatives",
     "spectropy_cli",
-    "spectropy_checks",
+    "spectropy_symmetry",
     "spectropy_config",
     "spectropy_derivatives",
     "spectropy_directional",

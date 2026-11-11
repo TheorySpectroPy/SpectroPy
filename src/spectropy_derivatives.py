@@ -1,6 +1,5 @@
 import os
 import sys
-import csv
 
 import numpy as np
 
@@ -13,7 +12,7 @@ from spectropy_config import read_settings
 from spectropy_displacements import read_displacement_mode, read_displacements
 from spectropy_structure import read_structure
 from spectropy_paths import displacement_root
-from spectropy_directional import directional_document, save_directional, directional_residuals
+from spectropy_directional import directional_document, save_directional
 from reconstruct_dielectric_derivatives import project_crystal_tensor_field
 
 
@@ -46,11 +45,10 @@ def _write_derivatives(path, target_frequency, lattice, positions, real_tensors,
                     output.write(" ".join(f"{value:.16e}" for value in row) + "\n")
 
 
-def write_derivative_outputs(energy, structure, raw, corrected=None, representatives=None, directory=".", *, directional=None):
+def write_derivative_outputs(energy, structure, raw, corrected=None, directory=".", *, directional=None):
     """Save raw measured-direction responses and the active Cartesian field.
 
-    Raw Cartesian reconstruction is internal only. Residuals compare measured
-    responses with corrected Cartesian tensors contracted onto the same seeds.
+    Raw Cartesian reconstruction is internal only.
     """
     if directional is None:
         raise ValueError('Measured directional responses are required; Cartesian tensors cannot substitute for raw observations')
@@ -60,22 +58,8 @@ def write_derivative_outputs(energy, structure, raw, corrected=None, representat
         print(f"Wrote {name}")
     save_directional(os.path.join(directory, f"raw_directional_derivative_{energy:.2f}.json"), directional)
     write(f"epsilon_derivative_{energy:.2f}", raw if corrected is None else corrected)
-    if corrected is None:
-        return []
-    write(f"corrected_epsilon_derivative_{energy:.2f}", corrected)
-    rows, summary = directional_residuals(directional, corrected)
-    for row in rows:
-        row['species'] = structure.atom_symbols[row['atom']-1]
-        print(f"Atom {row['atom']}, measured direction {row['direction_index']}: "
-              f"back-contracted residual = {row['residual']:.10e} (1/angstrom)")
-    path = os.path.join(directory, f"site_projection_residuals_{energy:.2f}.csv")
-    with open(path, 'w', newline='') as output:
-        writer = csv.DictWriter(output, fieldnames=list(rows[0]))
-        writer.writeheader()
-        writer.writerows(rows)
-    save_directional(os.path.join(directory, f"directional_residual_summary_{energy:.2f}.json"), summary)
-    print(f"Measured-direction relative norm-sum residual: {summary['relative_norm_sum']}")
-    return rows
+    if corrected is not None:
+        write(f"corrected_epsilon_derivative_{energy:.2f}", corrected)
 
 
 def run_derivatives(input_path="input", use_saved_basis=False,
@@ -155,4 +139,4 @@ def run_derivatives(input_path="input", use_saved_basis=False,
         else:
             raw = reconstruct(False) if not site_projection else None
             corrected = reconstruct(True) if site_projection else None
-        write_derivative_outputs(energy, structure, raw, corrected, measurements.keys(), directional=directional)
+        write_derivative_outputs(energy, structure, raw, corrected, directional=directional)

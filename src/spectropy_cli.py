@@ -106,29 +106,10 @@ def main(argv: list[str] | None = None) -> int:
             command_parser.add_argument("--equilibrium-file", "--equilibrium-vasprun", dest="equilibrium_vasprun", help="Optional external reference in XML format; defaults to displacements/ra_pos_equilibrium/vasprun.xml")
             command_parser.add_argument("--saved-basis", action="store_true", help="Optional saved reconstruction lookup; manual reconstruction is the default")
 
-    check_parser = subparsers.add_parser(
-        "check", help="Export atomic-projection or direct mode-covariance residuals.",
-        description="Check atomic derivative symmetry or mode-specific irrep covariance.",
-    )
-    add_workdir(check_parser)
-    check_parser.add_argument("--kind", choices=("atomic", "mode"), default="atomic",
-                              help="atomic: derivative projection; mode: direct irrep covariance (requires irreps.yaml).")
-    check_parser.add_argument("--subspace-tolerance", type=float, default=1e-5,
-                              help="Maximum mode-subspace leakage for --kind mode (default: 1e-5).")
-    check_parser.add_argument("--energies", nargs="+", type=float, help="Laser energies in eV (default: input).")
-    check_parser.add_argument("--output", default="check", help="Output directory relative to workdir (default: check).")
-    check_parser.add_argument("--epsilon-fraction", type=float, default=1e-12, help="Atomic-projection check only: relative norm regularizer (default: 1e-12).")
-    check_parser.add_argument("--plot", action="store_true", help="Also create residual PNG plots; requires Matplotlib.")
-    check_parser.add_argument("--style", help="Matplotlib style file for --plot.")
-
     mode_displacements = subparsers.add_parser("mode-displacements", help="Generate explicit +/- displacements for every Raman-active mode.")
     add_workdir(mode_displacements)
-    mode_displacements.add_argument("--modes", nargs="+", type=int, help="Explicit 1-based indices overriding activity/cutoff selection; --reduce expands partner groups.")
+    mode_displacements.add_argument("--modes", nargs="+", type=int, help="Explicit 1-based indices overriding activity/cutoff selection.")
     mode_displacements.add_argument("--q", type=float, default=.01, help="Normal coordinate in Angstrom sqrt(amu), matching Liangbo's raman_dis_mode.")
-    reduction = mode_displacements.add_mutually_exclusive_group()
-    reduction.add_argument("--reduce", action="store_true", help="Experimental opt-in: reduce degenerate partners and reuse symmetry-related signs.")
-    reduction.add_argument("--no-reduction", action="store_true", help="Explicit original-mode +/- pairs (the default).")
-    mode_displacements.add_argument("--keep-both-signs", action="store_true", help="Reduce partners but compute both signs explicitly.")
     mode_displacements.add_argument("--output", default="mode_displacements")
     mode_displacements.add_argument("--minimum-frequency", type=float, default=1.0, help="Default automatic selection excludes frequencies below this cm^-1.")
     mode_tensors = subparsers.add_parser("mode-tensors", help="Reconstruct mode tensors directly from collective displaced dielectric tensors.")
@@ -137,7 +118,6 @@ def main(argv: list[str] | None = None) -> int:
     mode_tensors.add_argument("--output", default="mode_results")
     mode_tensors.add_argument("--source", choices=("vasprun.xml",), default="vasprun.xml")
     mode_tensors.add_argument("--energies", nargs="+", type=float)
-    mode_tensors.add_argument("--denoise", action="store_true", help="Project complete mode partner groups onto Neumann covariance; preserve raw tensors (VASP only).")
 
     args = parser.parse_args(argv)
     if args.command is None:
@@ -151,10 +131,9 @@ def main(argv: list[str] | None = None) -> int:
             module = importlib.import_module("spectropy_modes")
             if args.command == "mode-displacements":
                 module.generate(q=args.q, modes=args.modes,
-                                reduce=args.reduce, reuse_sign=not args.keep_both_signs,
                                 output=args.output, minimum_frequency=args.minimum_frequency)
             else:
-                module.reconstruct(args.directory, args.source, args.energies, args.output, denoise=args.denoise)
+                module.reconstruct(args.directory, args.source, args.energies, args.output)
         _run_in_directory(args.workdir, collective)
     elif args.command == "derivatives":
         def derive():
@@ -162,16 +141,7 @@ def main(argv: list[str] | None = None) -> int:
                 use_saved_basis=args.saved_basis, difference_scheme=args.difference,
                 equilibrium_vasprun=args.equilibrium_vasprun)
         _run_in_directory(args.workdir, derive)
-    elif args.command == "check":
-        style = os.path.abspath(args.style) if args.style else None
-        def analyze() -> None:
-            module = importlib.import_module("spectropy_checks")
-            common = dict(energies=args.energies, output=args.output, plot=args.plot, style=style)
-            if args.kind == "mode":
-                module.run_mode_check(subspace_tolerance=args.subspace_tolerance, **common)
-            else:
-                module.run_check(epsilon_fraction=args.epsilon_fraction, **common)
-        _run_in_directory(args.workdir, analyze)
+
     else:
         commands = _commands(getattr(args, "mode", "full"), getattr(args, "basis", "cartesian"))
         _run_in_directory(args.workdir, commands[args.command][1])

@@ -192,14 +192,11 @@ For the supplied `input`, expect:
   direction vectors, step lengths and sign provenance; no Cartesian basis solve.
 - `corrected_epsilon_derivative_0.00`: site-projected derivatives.
 - `epsilon_derivative_0.00`: the active corrected field for downstream consumers.
-- `site_projection_residuals_0.00.csv`: measured-direction raw minus denoised
-  back-contraction residuals, one row per measured atom/direction.
-- `directional_residual_summary_0.00.json`: aggregate measured-direction metric.
 
 Raw responses may use a symmetry-generated negative partner, explicitly
 flagged in the file, but contain no reconstructed directions or atoms.
 Denoising jointly fits the site/reciprocity-allowed tensor, not just forbidden
-entries; residuals compare it to the raw responses along the sampled directions.
+entries.
 Raw spectra reconstruct Cartesian derivatives internally without saving a raw
 Cartesian derivative file. Projection enforces
 symmetry consistency; it cannot detect or remove every numerical error. The
@@ -232,15 +229,7 @@ numerical spectrum is unnormalized. A 1 cm⁻¹ Lorentzian HWHM controls display
 broadening, not the accuracy of the electronic calculation. No reference peak
 positions or expected intensity ratios are supplied until the data are finalized.
 
-## 7. Optional checks and extensions
-
-```bash
-spectropy check --kind mode --plot
-```
-
-This compares mode tensors against their symmetry transformation law using
-the phonon partner groups. A small residual is a consistency check, not proof
-of physical accuracy. Read the generated diagnostics before interpreting it.
+## 7. Additional polarizations and energies
 
 To examine xy polarization, change the second line of `input` to `0.0 1.0 0.0`,
 then rerun `spectropy spectrum` and `spectropy plot`. This needs no new DFT
