@@ -205,3 +205,7 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Local verification suite and draft documentation are not published.
+/tests/
+/docs/*.md

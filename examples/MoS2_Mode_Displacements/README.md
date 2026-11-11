@@ -18,17 +18,7 @@ To select an E' pair explicitly (verify its mode numbers in your own dataset):
     spectropy mode-displacements --modes 6 7 --q 0.01 --output explicit_pair
 
 Both modes are directly displaced. Explicit selection overrides Raman-activity
-and frequency filtering. For the experimental partner-reduction path only:
-
-    spectropy mode-displacements --reduce --modes 6 --q 0.01 --output reduced_pair
-
-Only with --reduce is mode 7 reconstructed jointly with mode 6; reduced
-filenames can refer to rotated partner combinations. Inspect the generated
-mode_manifest.json before running any DFT.
-
-For the Fortran-compatible explicit original-mode stencil:
-
-    spectropy mode-displacements --modes 6 --q 0.01 --no-reduction --output unreduced
+and frequency filtering. Every selected mode requires both signs.
 
 The POSCAR_mode6a/b files and mode_index columns follow Liangbo's
 raman_dis_mode conventions. No Fortran code is called by SpectroPy.
@@ -45,7 +35,6 @@ After external optical calculations finish in the generated directories:
 
     spectropy mode-tensors --directory mode_displacements --output mode_results
 
-vasprun.xml is the only VASP dielectric source; all nine components are retained. Add --denoise to
-project complete partner groups jointly and retain raw/corrected tensors.
-See [the main README](../../README.md#experimental-collective-mode-workflow)
-for assumptions and limitations.
+vasprun.xml is the only VASP dielectric source; all nine components are retained.
+Each output tensor comes directly from its calculated positive/negative pair.
+See [the main README](../../README.md#mode-displacements) for inputs and units.

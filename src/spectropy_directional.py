@@ -1,4 +1,4 @@
-"""Measured-direction raw output and residuals, with explicit physical units."""
+"""Measured-direction raw output, with explicit physical units."""
 import json
 from pathlib import Path
 import numpy as np
@@ -90,30 +90,3 @@ def reconstruct_directional_file(path, total_atoms):
         raise ValueError('Directional reconstruction does not cover all atoms')
     result = np.array([tensors[a].transpose(2,0,1) for a in range(1,total_atoms+1)])
     return result.real, result.imag
-
-
-def directional_residuals(document, corrected):
-    """Compare raw samples with corrected tensors contracted on the same unit vectors."""
-    factor = document['volume_factor_angstrom3']
-    rows = []
-    for sample in document['samples']:
-        atom = sample['atom']
-        unit = np.asarray(sample['unit_cartesian'])
-        observed = np.asarray(sample['real']) + 1j*np.asarray(sample['imaginary'])
-        tensor = corrected[0][atom] + 1j*corrected[1][atom]
-        predicted = factor * np.einsum('abi,i->ab', tensor, unit)
-        norm = float(np.linalg.norm(observed-predicted))
-        raw_norm = float(np.linalg.norm(observed))
-        rows.append(dict(atom=atom, direction_index=sample['direction_index'],
-            ux=unit[0], uy=unit[1], uz=unit[2],
-            negative_from_symmetry=sample['negative_from_symmetry'],
-            residual=norm/factor, stored_units_residual=norm,
-            raw_norm=raw_norm/factor, relative_residual=None if raw_norm == 0 else norm/raw_norm))
-    # Each measured atom counts once; each direction contributes once to its norm.
-    atoms = sorted({r['atom'] for r in rows})
-    absolute = sum(np.sqrt(sum(r['residual']**2 for r in rows if r['atom']==a)) for a in atoms)
-    raw = sum(np.sqrt(sum(r['raw_norm']**2 for r in rows if r['atom']==a)) for a in atoms)
-    summary = dict(metric='measured_direction_back_contraction', measured_atoms=len(atoms),
-        measured_directions=len(rows), absolute_norm_sum=float(absolute),
-        relative_norm_sum=None if raw == 0 else float(absolute/raw))
-    return rows, summary
