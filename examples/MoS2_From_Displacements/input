@@ -1,7 +1,9 @@
-1.0 0.0 0.0                  ! incident polarization: x
-1.0 0.0 0.0                  ! scattered polarization: x
-z                            ! surface normal
+incident_polarization: 1 0 0
+scattered_polarization: 1 0 0
+surface_normal: z
 laser_energies: 0.00          ! eV; static limit, not a finite laser energy
+displacement_mode: minimal   ! reduce atoms and directions by site symmetry
+displacement_basis: fractional ! basis for candidate directions
 displacement_amplitude: 0.03 ! Angstrom; illustrative, not convergence-tested here
 difference_scheme: central
 dielectric_source: vasprun.xml

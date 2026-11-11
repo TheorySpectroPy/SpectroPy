@@ -17,8 +17,8 @@ convergence claim is attached to the current template.
 SpectroPy does not choose a functional, potentials, k-points, executable,
 cluster scheduler, or relaxation/phonon workflow. This example uses its
 **VASP file interface**, so it is not file-format agnostic: the structural
-input is `CONTCAR`, and dielectric data come from nine-component `vasprun.xml`
-files. No Fortran program or production workflow generator is needed here.
+input is `CONTCAR`, and dielectric data come from `vasprun.xml` files.
+No Fortran program or production workflow generator is needed here.
 DFT execution is an explicit external step, with a prerecorded-data alternative.
 
 Relaxation and harmonic-force calculations are prerequisites, not performed
@@ -54,7 +54,7 @@ We will provide these files in `data/starting/`:
 | `CONTCAR` | Relaxed three-atom monolayer MoS₂ reference cell. |
 | `band.yaml` | Phonopy Γ-point frequencies, masses, structure, and eigenvectors. |
 | `symmetry` | Phonopy YAML containing space-group operations, atom mapping, and site symmetries. |
-| `irreps.yaml` | Mode labels and partner groups for the optional mode-covariance check. |
+| `irreps.yaml` | Mode labels for spectra. |
 
 The exact calculation provenance and versions will accompany the data. Do not
 substitute the older tutorial's derivatives: generating derivatives is the
@@ -79,7 +79,7 @@ Once the files exist, copy them with this guarded command:
 
 **Stop if this command reports a missing file.** The placeholders cannot be
 renamed into scientific inputs. Inspect `input` before proceeding: it selects
-xx polarization, a 0.03 Å displacement length, central differences, site
+xx polarization, minimal fractional displacements, a 0.03 Å step, central differences, site
 projection, and a static-limit dielectric response at 0.00 eV. These are
 tutorial choices, not a prescription for converged calculations. No `cutoff`
 is set, so intensities are reduced squared Raman contractions without the
@@ -90,7 +90,7 @@ optional Bose/phonon-frequency factor.
 Run from `RUN_DIR`:
 
 ```bash
-spectropy displacements --mode minimal --basis fractional
+spectropy displacements
 spectropy symmetry
 ```
 
@@ -133,11 +133,12 @@ For each `displacements/ra_pos_atom*/` directory:
    `vasprun.xml` contains the density-density dielectric function, with real
    and imaginary data covering each requested energy.
 
-**All nine named components are required:** `xx`, `xy`, `xz`, `yx`, `yy`,
-`yz`, `zx`, `zy`, and `zz`, plus `energy`. Not every VASP build exports this
-layout. SpectroPy rejects six-component tables; it does not invent transpose
-entries or fall back to OUTCAR. Check one completed calculation before running
-the entire set. A parseable XML file alone does not establish SCF convergence.
+**Nine named components preserve independent off-diagonal entries.** Standard
+six-component tables also work, but SpectroPy warns when it fills missing
+transpose entries by reciprocity. Such entries are inferred and cannot expose
+off-diagonal asymmetry. There is no OUTCAR fallback. Check one completed
+calculation before running the entire set. A parseable XML file alone does not
+establish SCF convergence.
 
 ### B. Use the prerecorded outputs — placeholder
 
@@ -203,7 +204,7 @@ symmetry consistency; it cannot detect or remove every numerical error. The
 derivative files include the cell-volume/(4π) factor; do not multiply it again.
 
 The default path reconstructs direction bases explicitly. The optional
-`spectropy derivatives --saved-basis` validates and reuses `fractional_basis.json`.
+`saved_basis: true` setting validates and reuses `fractional_basis.json` when present.
 Changing the displacement length requires new dielectric calculations, not
 just editing metadata.
 
@@ -231,7 +232,7 @@ positions or expected intensity ratios are supplied until the data are finalized
 
 ## 7. Additional polarizations and energies
 
-To examine xy polarization, change the second line of `input` to `0.0 1.0 0.0`,
+To examine xy polarization, set `scattered_polarization: 0 1 0` in `input`,
 then rerun `spectropy spectrum` and `spectropy plot`. This needs no new DFT
 calculations, but overwrites the same spectrum filenames: preserve the xx
 outputs first, or use a separate working copy. Likewise, additional photon

@@ -7,10 +7,11 @@ metadata `displacements.dat` and one directory per generated ra_pos_atom*:
     ra_pos_atom.../vasprun.xml
 
 Generate this bundle from the tutorial's finalized starting data and input.
-Keep all nine named dielectric components independently in both real and
-imaginary density-density tables. Include the requested 0.00 eV point.
-Do not replace XML outputs with precomputed atomic derivatives or silently
-fill missing transpose components. Do not redistribute licensed POTCAR files.
+Keep the original printed components in both real and imaginary density-density
+tables and include the requested 0.00 eV point. Nine components allow independent
+transpose comparisons; six-component XML is accepted with a reciprocity warning.
+Do not replace XML outputs with precomputed derivatives or manually fill missing
+components in the source files. Do not redistribute licensed POTCAR files.
 
 Record the executable version/build, optical settings, convergence/completion
 evidence, energy grid, output precision, units, source permission, and checksums.

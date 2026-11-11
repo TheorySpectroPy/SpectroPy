@@ -282,12 +282,15 @@ def write_calculation_directories(displacements: list[Displacement], structure: 
 
 # Main command chain for creating the displacement files
 def run_displacements(
-    mode: str = "full",
+    mode: str | None = None,
     contcar_path: str | Path = "CONTCAR",
     symmetry_path: str | Path = "symmetry",
     input_path: str | Path = "input",
-    basis: str = "cartesian",
+    basis: str | None = None,
 ) -> list[Displacement]:
+    settings = read_settings(input_path)
+    mode = settings.displacement_mode if mode is None else mode
+    basis = settings.displacement_basis if basis is None else basis
     if mode not in {"full", "atoms", "minimal"}:
         raise ValueError("mode must be full, atoms, or minimal")
     structure = read_structure(contcar_path)
