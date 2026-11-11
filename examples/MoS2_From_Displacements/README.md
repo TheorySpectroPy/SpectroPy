@@ -37,7 +37,7 @@ spectropy displacements --help
 # Keep source/reference files separate from generated results.
 TUTORIAL_DIR="$PWD/examples/MoS2_From_Displacements"
 RUN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/spectropy-mos2-XXXXXX")
-cp "$TUTORIAL_DIR/input" "$RUN_DIR/input"
+cp "$TUTORIAL_DIR/input.yaml" "$RUN_DIR/input.yaml"
 cd "$RUN_DIR"
 ```
 
@@ -78,7 +78,7 @@ Once the files exist, copy them with this guarded command:
 ```
 
 **Stop if this command reports a missing file.** The placeholders cannot be
-renamed into scientific inputs. Inspect `input` before proceeding: it selects
+renamed into scientific inputs. Inspect `input.yaml` before proceeding: it selects
 xx polarization, minimal fractional displacements, a 0.03 Å step, central differences, site
 projection, and a static-limit dielectric response at 0.00 eV. These are
 tutorial choices, not a prescription for converged calculations. No `cutoff`
@@ -124,7 +124,7 @@ with different settings after calculating their dielectric responses.
 ### A. Run your own optical calculations
 
 Provide `INCAR`, `KPOINTS`, and `POTCAR` in `RUN_DIR` before Step 3 to have them
-automatically symlinked into all displaced and equilibrium directories.
+automatically symlinked into all displaced directories.
 For each `displacements/ra_pos_*/` directory:
 
 1. Keep its generated `POSCAR` unchanged. This is a frozen displacement, not a
@@ -184,7 +184,7 @@ pre-existing destination XML; do not bypass a mismatch by renaming files.
 
 A format-only mismatch can also fail `cmp`; ask for a compatible bundle rather
 than assuming equivalence. The release bundle must be generated with the
-documented SpectroPy version and the provided `input`. It is not available yet.
+documented SpectroPy version and the provided `input.yaml`. It is not available yet.
 
 ## 5. Reconstruct derivatives, keeping raw and denoised data
 
@@ -192,7 +192,7 @@ documented SpectroPy version and the provided `input`. It is not available yet.
 spectropy derivatives
 ```
 
-For the supplied `input`, expect:
+For the supplied `input.yaml`, expect:
 
 - `dielectric_tensor_0.00`: sampled dielectric responses.
 - `raw_directional_derivative_0.00.json`: measured-direction raw responses, unit
@@ -239,13 +239,13 @@ positions or expected intensity ratios are supplied until the data are finalized
 
 ## 7. Additional polarizations and energies
 
-To examine xy polarization, set `scattered_polarization: 0 1 0` in `input`,
+To examine xy polarization, set `scattered_polarization: [0, 1, 0]` in `input.yaml`,
 then rerun `spectropy spectrum` and `spectropy plot`. This needs no new DFT
 calculations, but overwrites the same spectrum filenames: preserve the xx
 outputs first, or use a separate working copy. Likewise, additional photon
 energies need no new DFT calculations only if the existing dielectric tables
 cover them. Rerun derivatives, spectrum, and plot after changing energies.
 
-For more detail, see [derivative reconstruction](../../README.md#4-calculate-dielectric-derivatives) and
+For more detail, see [derivative reconstruction](../../README.md#step-4-calculate-dielectric-derivatives) and
 the [main workflow documentation](../../README.md). Collective-mode displacements
 are a different route; see the [separate example](../MoS2_Mode_Displacements/README.md).

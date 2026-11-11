@@ -2,7 +2,7 @@
 
 Provide consistently ordered CONTCAR (VASP), plus Phonopy
 band.yaml, irreps.yaml and symmetry. No electronic results are bundled.
-Use the neighboring input file for mode selection, amplitude, energies, output
+Use the neighboring `input.yaml` for mode selection, amplitude, energies, output
 directories, and xx polarization.
 Place your optical INCAR, KPOINTS, and POTCAR in the working directory before
 generation; SpectroPy automatically symlinks them into each displacement directory.
@@ -18,8 +18,8 @@ even though the example input requests xx polarization.
 
 To select an E' pair explicitly (verify its mode numbers in your own dataset):
 
-Set `mode_indices: 6 7` and `mode_displacements_directory: explicit_pair` in
-`input`, then run `spectropy mode-displacements` in a clean working directory.
+Set `mode_indices: [6, 7]` and `mode_displacements_directory: explicit_pair` in
+`input.yaml`, then run `spectropy mode-displacements` in a clean working directory.
 
 Both modes are directly displaced. Explicit selection overrides Raman-activity
 and frequency filtering. Every selected mode requires both signs.
@@ -41,4 +41,4 @@ vasprun.xml is the only VASP dielectric source; all printed components are retai
 Six-component files are accepted with a warning that missing transpose entries
 are filled by reciprocity, rather than independently calculated.
 Each output tensor comes directly from its calculated positive/negative pair.
-See [the main README](../../README.md#collective-mode-displacements) for inputs and units.
+See [advanced documentation](../../docs.md#collective-mode-displacements) for inputs and units.

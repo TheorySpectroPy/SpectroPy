@@ -37,7 +37,7 @@ cd examples/MoS2_Tutorial
 - `band.yaml`: Gamma-point phonon modes from Phonopy.
 - `dielectric_derivatives_1.96`: precomputed SpectroPy dielectric derivatives
   at a 1.96 eV laser energy, retained under its historical filename.
-- `input`: non-interactive geometry, laser-energy, displacement, polarization,
+- `input.yaml`: non-interactive geometry, laser-energy, displacement, polarization,
   and broadening settings used by the tutorial.
 - `Raman_plot_styled.png`: a reference image from the earlier workflow.
 
@@ -53,7 +53,7 @@ spectropy spectrum
 spectropy plot
 ```
 
-`input` selects a 1.96 eV laser, parallel in-plane incident/scattered
+`input.yaml` selects a 1.96 eV laser, parallel in-plane incident/scattered
 polarizations, polarization averaging, and a 1.0 cm⁻¹ Lorentzian FWHM
 (0.5 cm⁻¹ HWHM in this historical example). The
 commands create:
@@ -70,27 +70,27 @@ unnormalized broadened intensity. The PNG is normalized for display.
 
 ![Reference Raman spectrum](../../docs/images/Raman_plot_MoS2.png)
 
-## Understanding `input`
+## Understanding `input.yaml`
 
 The geometry and calculation settings are all named entries:
 
-```text
-incident_polarization: 1 0 0
-scattered_polarization: 1 0 0
+```yaml
+incident_polarization: [1, 0, 0]
+scattered_polarization: [1, 0, 0]
 surface_normal: z
-laser_energies: 1.96        ! eV
-displacement_amplitude: 0.03 ! Angstrom
-displacement_mode: full
+laser_energies: [1.96] # eV
+displacement_amplitude: 0.03 # Angstrom
+symmetry: off
 displacement_basis: cartesian
-polarization: average       ! write summed polarization-channel intensity too
-broadening_fwhm: 1.0        ! cm-1
+polarization: average # write summed polarization-channel intensity too
+broadening_hwhm: 0.5 # cm-1, half width at half maximum
 broadening_type: lorentzian
 ```
 
-`laser_energies` may contain multiple space-separated values. Omitting it
+`laser_energies` may contain multiple values in a YAML list. Omitting it
 uses `0.00 eV`, the static-limit case. `displacement_amplitude` defaults to
-0.03 Å in all three modes. The legacy `broadening_fwhm: 1.0` here is equivalent
-to `broadening_hwhm: 0.5`; new inputs should use HWHM and never specify both.
+0.03 Å in all three modes. The supplied `broadening_hwhm: 0.5` preserves the
+reference spectrum's 1.0 cm⁻¹ full width.
 
 ## Full calculation workflow
 
@@ -99,7 +99,7 @@ Gamma-point Phonopy calculation.
 
 ### 1. Create a Phonopy symmetry file
 
-The `atoms` and `minimal` derivative stages require Phonopy's YAML symmetry output:
+The `atoms` and `on` derivative stages require Phonopy's YAML symmetry output:
 
 ```bash
 phonopy --symmetry -c CONTCAR > symmetry
@@ -107,28 +107,27 @@ phonopy --symmetry -c CONTCAR > symmetry
 
 ### 2. Generate displaced structures
 
-Choose the displacement strategy and basis in `input`:
+Choose the displacement strategy and basis in `input.yaml`:
 
-```text
-displacement_mode: full      ! full, atoms, or minimal
-displacement_basis: cartesian ! cartesian or fractional
+```yaml
+symmetry: off # on, off, or atoms
+displacement_basis: cartesian # cartesian or fractional
 ```
 
-`full` displaces every atom along three axes; `atoms` keeps atomic
-representatives; `minimal` also reduces directions by site symmetry. Then run:
+`off` displaces every atom along three axes; `atoms` keeps atomic
+representatives; `on` also reduces directions by site symmetry. Then run:
 
 ```bash
 spectropy displacements
 ```
 
 Every mode writes `atomic_displacement`, `displacements.dat`,
-`displacements/pos_atom*`, and `displacements/ra_pos_atom*/POSCAR`, plus the
-undisplaced `displacements/ra_pos_equilibrium/POSCAR`.
+`displacements/pos_atom*`, and `displacements/ra_pos_atom*/POSCAR`.
 Use `displacement_basis: fractional` with any mode to select fractional candidates.
 
 Place your optical `INCAR`, `KPOINTS`, and `POTCAR` in the working directory
-before generation. SpectroPy symlinks supplied files into each displaced and
-equilibrium directory, warns about missing inputs, and refuses to replace
+before generation. SpectroPy symlinks supplied files into each displaced
+directory, warns about missing inputs, and refuses to replace
 conflicting inputs. It does not choose their contents, submit jobs, or run VASP.
 
 ### 3. Evaluate dielectric derivatives
@@ -149,7 +148,7 @@ For every value in `laser_energies`, this writes:
 - `raw_directional_derivative_<energy>.json`: raw measured-direction responses.
 
 Denoising is optional via `site_symmetry_projection: true`; see the
-[main README](../../README.md#symmetry-denoising-and-raman-tensors).
+[advanced documentation](../../docs.md#symmetry-denoising-and-raman-tensors).
 
 ### 4. Calculate and plot the spectrum
 

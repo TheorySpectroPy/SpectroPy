@@ -8,7 +8,7 @@ from calculate_dielectric_derivatives import (collect_vasprun_files,
 from process_symmetry import compute_mapping_matrices, read_site_symmetries, read_symmetry_file
 from reconstruct_dielectric_derivatives import (calculate_derivatives, reconstruct_derivatives,
     reconstruct_fractional_derivatives, read_fractional_bases)
-from spectropy_config import read_settings
+from spectropy_config import DEFAULT_INPUT, read_settings
 from spectropy_displacements import read_displacement_mode, read_displacements
 from spectropy_structure import read_structure
 from spectropy_paths import displacement_root
@@ -62,7 +62,7 @@ def write_derivative_outputs(energy, structure, raw, corrected=None, directory="
         write(f"corrected_epsilon_derivative_{energy:.2f}", corrected)
 
 
-def run_derivatives(input_path="input", use_saved_basis=None,
+def run_derivatives(input_path=DEFAULT_INPUT, use_saved_basis=None,
                     difference_scheme=None, equilibrium_vasprun=None):
     settings = read_settings(input_path)
     use_saved_basis = settings.saved_basis if use_saved_basis is None else use_saved_basis

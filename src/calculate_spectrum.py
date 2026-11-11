@@ -2,24 +2,24 @@ import numpy as np
 import os
 import sys
 import re
-from spectropy_config import Settings, read_settings, write_settings
+from spectropy_config import DEFAULT_INPUT, Settings, read_settings, write_settings
 from spectropy_phonons import read_registered_modes, read_irreps as _read_irreps
 
 
-def read_polarization_mode(input_path="input"):
+def read_polarization_mode(input_path=DEFAULT_INPUT):
     return read_settings(input_path).polarization
 
 
-def get_user_input():
-    if os.path.exists("input"):
-        print("Reading experimental geometry from 'input' file...")
-        settings = read_settings("input")
+def get_user_input(input_path=DEFAULT_INPUT):
+    settings = read_settings(input_path)
+    if os.path.exists(input_path):
+        print(f"Reading experimental geometry from '{input_path}'...")
         if (
             settings.incident_polarization is None
             or settings.scattered_polarization is None
             or settings.surface_normal is None
         ):
-            raise ValueError("input needs incident/scattered polarizations and a surface normal")
+            raise ValueError(f"{input_path} needs incident/scattered polarizations and a surface normal")
         pol_incident = np.array(settings.incident_polarization)
         pol_scattered = np.array(settings.scattered_polarization)
         axis = settings.surface_normal
@@ -32,7 +32,7 @@ def get_user_input():
         pol_incident = np.array(pol_incident_str.split(), dtype=float)
         pol_scattered = np.array(pol_scattered_str.split(), dtype=float)
 
-        write_settings("input", Settings(tuple(pol_incident), tuple(pol_scattered), axis))
+        write_settings(input_path, Settings(tuple(pol_incident), tuple(pol_scattered), axis))
 
     return pol_incident, pol_scattered, axis
 
@@ -128,7 +128,7 @@ def read_irreps(filepath="irreps.yaml"):
         print(f"Reading irreducible representations from {filepath}...")
     return labels
     
-def run_raman_tensor(dielectric_derivatives_path=None, _phonons=None, output_prefix=""):
+def run_raman_tensor(dielectric_derivatives_path=None, _phonons=None, output_prefix="", input_path=DEFAULT_INPUT):
     if dielectric_derivatives_path is None:
         for f in sorted(os.listdir('.')):
             if f.startswith("epsilon_derivative_"):
@@ -138,8 +138,8 @@ def run_raman_tensor(dielectric_derivatives_path=None, _phonons=None, output_pre
         print("***** epsilon_derivative_<freq> not found. Did you run `spectropy derivatives`? *****")
         sys.exit(1)
 
-    pol_incident, pol_scattered, axis = get_user_input()
-    polarization_mode = read_polarization_mode()
+    pol_incident, pol_scattered, axis = get_user_input(input_path)
+    polarization_mode = read_polarization_mode(input_path)
     if _phonons is None:
         frequencies, eigendisps, total_atoms = read_band_yaml()
     else:
@@ -175,7 +175,7 @@ def run_raman_tensor(dielectric_derivatives_path=None, _phonons=None, output_pre
 
     thz_to_cm1 = 33.35641
     freq_cm1 = frequencies * thz_to_cm1
-    cutoff_cm1 = read_settings().frequency_cutoff_cm1
+    cutoff_cm1 = read_settings(input_path).frequency_cutoff_cm1
     if cutoff_cm1 is not None:
         selected = (frequencies > 0.0) & (frequencies >= cutoff_cm1 / thz_to_cm1)
         occupation = 1.0 / (np.exp(freq_cm1[selected] * 0.004824125) - 1.0)
@@ -226,7 +226,7 @@ def run_raman_tensor(dielectric_derivatives_path=None, _phonons=None, output_pre
     print(f"Generated Raman_tensor and intensity files for {energy} eV.")
 
 
-def run_raman_tensors_for_input(input_path="input", _phonons=None):
+def run_raman_tensors_for_input(input_path=DEFAULT_INPUT, _phonons=None):
     from spectropy_config import read_settings
 
     settings = read_settings(input_path)
@@ -247,12 +247,12 @@ def run_raman_tensors_for_input(input_path="input", _phonons=None):
         for path in required:
             if not os.path.isfile(path):
                 raise FileNotFoundError(f"Missing {path}; run `spectropy derivatives` first")
-        run_raman_tensor(raw_path, _phonons=_phonons, output_prefix="raw_")
+        run_raman_tensor(raw_path, _phonons=_phonons, output_prefix="raw_", input_path=input_path)
         if settings.site_symmetry_projection:
-            run_raman_tensor(corrected_path, _phonons=_phonons, output_prefix="corrected_")
+            run_raman_tensor(corrected_path, _phonons=_phonons, output_prefix="corrected_", input_path=input_path)
         # Existing workflow consumers continue to see the selected field.
         run_raman_tensor(corrected_path if settings.site_symmetry_projection else raw_path,
-                         _phonons=_phonons)
+                         _phonons=_phonons, input_path=input_path)
 
 if __name__ == "__main__":
     run_raman_tensors_for_input()
