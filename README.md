@@ -5,7 +5,7 @@ A Python toolkit for simulating Raman spectra from first-principles calculations
 ## Key Features
 
 - **Symmetry Reduction and Reconstruction**: Computes a symmetry-reduced set of atomic displacements and reconstructs the remaining dielectric derivatives at equivalent directions and atoms.
-- **Symmetry Denoising**: Enforces atomic symmetry and reciprocity while retaining raw results.
+- **Symmetry Denoising**: Enforces atomic symmetry and reciprocity in the reconstructed derivatives.
 - **Automated Setup**: Generates calculation directories and displaced `POSCAR` files.
 - **Data Harvesting**: Automatically collects results from multiple `vasprun.xml` files.
 - **Frequency-Dependent Tensors**: Calculates complex Raman tensors for user-specified laser energies.
@@ -51,7 +51,7 @@ Relaxed structure + Gamma-point phonons
                  |
        Run VASP in each directory
                  |
-         spectropy derivatives
+         spectropy tensors
                  |
           spectropy spectrum
                  |
@@ -74,34 +74,45 @@ Create a new directory for your Raman calculation. Inside this directory, you wi
 Keep the calculation settings together in a file named `input.yaml`:
 
 ```yaml
-incident_polarization: [1, 0, 0]
-scattered_polarization: [0, 1, 0]
-surface_normal: z
-laser_energies: [0.00, 1.96] # eV: static response and one laser energy
-symmetry: on # reduce atoms and directions using symmetry
-displacement_basis: cartesian # basis for the candidate displacement vectors
-displacement_amplitude: 0.01 # physical displacement length in Angstrom
-difference_scheme: central # use positive/negative displacement pairs
-site_symmetry_projection: true # denoise within the symmetry-allowed subspace
-polarization: specific # use the polarization vectors above
-broadening_hwhm: 1.0 # peak half-width in cm^-1
-broadening_type: lorentzian # spectral line shape
+polarization:
+  incident: [1, 0, 0]
+  scattered: [0, 1, 0]
+  surface_normal: z
+  mode: specific
+
+spectrum:
+  energies: [0.00, 1.96] # eV
+
+displacements:
+  basis: cartesian
+  amplitude: 0.01 # Angstrom
+  difference: central
+
+symmetry:
+  reduction: on
+  denoise: true
+
+broadening:
+  hwhm: 1.0 # cm^-1
+  type: lorentzian
 ```
 
 Here, the geometry selects xy polarization with surface normal z. The energies
-select static and 1.96 eV responses; `symmetry: on`, `cartesian`, and `0.01` select
+select static and 1.96 eV responses; `reduction: on`, `cartesian`, and `0.01` select
 symmetry-reduced directions with a 0.01 Å step. Central differences use ± pairs,
-projection enables denoising, and Lorentzian peaks have a 1 cm⁻¹ half-width.
+`denoise: true` enables denoising, and Lorentzian peaks have a 1 cm⁻¹ half-width.
 The step is illustrative, not convergence-tested. Each stage reads `input.yaml`.
 
 ### Step 2: Generate Displacements
 
-Choose one `symmetry` entry in `input.yaml`. For this workflow, keep
+Choose one `reduction` entry in the `symmetry` section. For this workflow, keep
 `on` enabled; switch to `off` when debugging or comparing unreduced results.
 
 ```yaml
-# symmetry: off    # Debugging: all atoms, three basis axes
-symmetry: on  # Demonstration: symmetry-reduced atoms and directions
+symmetry:
+  # reduction: off # Debugging: all atoms, three basis axes
+  reduction: on    # Demonstration: symmetry-reduced atoms and directions
+  denoise: true
 ```
 
 Then generate the structures:
@@ -143,27 +154,25 @@ This is the main computational step. You must now run VASP in each of the
 responsibility and will depend on your specific computer or cluster environment.
 Calculate the dielectric response without relaxing the displaced structures.
 
-### Step 4: Calculate Dielectric Derivatives
+### Step 4: Calculate Raman Tensors
 
 Once all VASP jobs are complete:
 
 ```bash
-spectropy derivatives
+spectropy tensors
 ```
 
 SpectroPy collects the displaced `vasprun.xml` files into `displacements/vasprun/`
-and parses each once for all requested laser energies.
+and parses each once for all requested laser energies. It reconstructs and
+denoises the atomic derivatives in memory, then contracts them with the
+`band.yaml` phonon eigenvectors.
 
 | Output (`<E>` is the laser energy in eV) | Format and contents |
 | --- | --- |
-| `epsilon_derivative_<E>` | Text: reconstructed, denoised dielectric derivatives for every atom, including symmetry-equivalent atoms and directions; three Cartesian 3×3 slices per atom, with real and imaginary parts. |
-| `corrected_epsilon_derivative_<E>` | Text: explicitly named copy of the same denoised derivatives. |
-| `raw_directional_derivative_<E>.json` | JSON: raw measured-direction derivatives, displacement vectors, step lengths, and sign provenance. |
-| `dielectric_tensor_<E>` | Text: dielectric tensors sampled from the displacement calculations. |
+| `Raman_tensor_<E>eV` | Text: mode index, frequency, symmetry label, and complex Cartesian 3×3 Raman tensor for each mode. |
 
-For this example, the reconstructed files are `epsilon_derivative_0.00` and
-`epsilon_derivative_1.96`, alongside their `corrected_` copies used by the
-spectrum stage.
+For this example, the final tensors are `Raman_tensor_0.00eV` and
+`Raman_tensor_1.96eV`. No per-atom intermediate files are written by default.
 
 ### Step 5: Calculate the Final Spectrum
 
@@ -172,17 +181,13 @@ spectropy spectrum
 spectropy plot
 ```
 
-SpectroPy combines the atomic derivatives with the phonon eigenvectors
-(`band.yaml`) to calculate the mode Raman tensors and corresponding intensities.
+The spectrum stage reads the final Raman tensors and applies the polarization
+settings. Change polarization and rerun this stage without reprocessing XML.
 
 | Output (`<E>` is the laser energy in eV) | Contents |
 | --- | --- |
-| `Raman_tensor_<E>eV` | Complex Raman tensor for each vibrational mode. |
 | `Raman_intensity_complex_<E>eV` | Frequencies, intensities, and available symmetry labels for the chosen polarization. |
 | `Raman_intensity_complex_broadening_<E>eV` | Unnormalized, two-column broadened spectrum. |
-
-This example also saves `raw_` and `corrected_` tensor/intensity files.
-The unprefixed files used by the plotter contain the denoised result.
 
 ![Example Raman Spectrum Plot](docs/images/Raman_plot_MoS2.png)
 

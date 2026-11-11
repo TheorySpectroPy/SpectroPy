@@ -21,11 +21,8 @@ def _commands(symmetry: str | None, basis: str | None = None) -> dict[str, tuple
             getattr(importlib.import_module(module), function)()
         return run
 
-    def derivatives() -> None:
-        getattr(importlib.import_module("spectropy_derivatives"), "run_derivatives")()
-
     def spectrum() -> None:
-        getattr(importlib.import_module("calculate_spectrum"), "run_raman_tensors_for_input")()
+        getattr(importlib.import_module("calculate_spectrum"), "run_spectrum")()
 
     def displacements() -> None:
         getattr(importlib.import_module("spectropy_displacements"), "run_displacements")(symmetry, basis=basis)
@@ -41,16 +38,12 @@ def _commands(symmetry: str | None, basis: str | None = None) -> dict[str, tuple
             descriptions.get(symmetry, "Generate displacements using input.yaml settings."),
             displacements,
         ),
-        "derivatives": (
-            "Process symmetry and evaluate derivatives at every laser energy in input.yaml.",
-            derivatives,
-        ),
         "symmetry": (
             "Write the symmetry operations that map equivalent atoms.",
             stage("process_symmetry", "run_mapping"),
         ),
         "spectrum": (
-            "Build Raman tensors and intensities for every laser energy in input.yaml.",
+            "Calculate polarized intensities for every laser energy in input.yaml.",
             spectrum,
         ),
         "plot": (
@@ -86,40 +79,39 @@ def main(argv: list[str] | None = None) -> int:
     displacement_parser.add_argument(
         "--symmetry", choices=("on", "off", "atoms"), default=None,
         help=(
-            "Override input.yaml symmetry (default: off). "
+            "Override input.yaml symmetry.reduction (default: off). "
             "off: all atoms and +/- basis axes; atoms: all axes for "
             "symmetry-inequivalent atoms; on: site-symmetry-reduced "
             "set including mixed directions in the selected basis."
         ),
     )
     displacement_parser.add_argument("--basis", choices=("cartesian", "fractional"), default=None,
-                                     help="Override input.yaml displacement_basis (default: cartesian); lengths are in Angstrom.")
+                                     help="Override input.yaml displacements.basis (default: cartesian); lengths are in Angstrom.")
     for name, help_text in (
         ("symmetry", "Write atom-to-atom symmetry-operation matrices."),
-        ("derivatives", "Calculate dielectric derivatives."),
-        ("spectrum", "Build Raman tensors and intensities from derivatives."),
+        ("tensors", "Calculate final mode Raman tensors from displaced dielectric responses."),
+        ("spectrum", "Calculate polarized intensities from final Raman tensors."),
         ("plot", "Broaden and plot Raman intensities."),
     ):
         command_parser = subparsers.add_parser(name, help=help_text, description=help_text)
         add_workdir(command_parser)
-        if name == "derivatives":
-            command_parser.add_argument("--difference", choices=("central", "forward"), default=None, help="Override input.yaml difference_scheme (default: central)")
-            command_parser.add_argument("--equilibrium-file", "--equilibrium-vasprun", dest="equilibrium_vasprun", help="Override input.yaml equilibrium_file; otherwise use the generated equilibrium XML")
+        if name == "tensors":
+            command_parser.add_argument("--difference", choices=("central", "forward"), default=None, help="Override input.yaml displacements.difference (default: central)")
+            command_parser.add_argument("--equilibrium-file", "--equilibrium-vasprun", dest="equilibrium_vasprun", help="Override input.yaml displacements.equilibrium_file; otherwise use the generated equilibrium XML")
             command_parser.add_argument("--saved-basis", action=argparse.BooleanOptionalAction, default=None,
-                                        help="Override input.yaml saved_basis (default: false)")
+                                        help="Override input.yaml symmetry.saved_basis (default: false)")
 
     mode_displacements = subparsers.add_parser("mode-displacements", help="Generate explicit +/- displacements for every Raman-active mode.")
     add_workdir(mode_displacements)
-    mode_displacements.add_argument("--modes", nargs="+", type=int, help="Override input.yaml mode_indices with 1-based indices (default: automatic activity selection).")
-    mode_displacements.add_argument("--q", type=float, default=None, help="Override input.yaml mode_q, in Angstrom sqrt(amu) (default: 0.01).")
-    mode_displacements.add_argument("--output", default=None, help="Override input.yaml mode_displacements_directory (default: mode_displacements).")
-    mode_displacements.add_argument("--minimum-frequency", type=float, default=None, help="Override input.yaml mode_minimum_frequency; automatic selection requires frequencies above this cm^-1 (default: 1.0).")
+    mode_displacements.add_argument("--modes", nargs="+", type=int, help="Override input.yaml modes.indices with 1-based indices (default: automatic activity selection).")
+    mode_displacements.add_argument("--q", type=float, default=None, help="Override input.yaml modes.q, in Angstrom sqrt(amu) (default: 0.01).")
+    mode_displacements.add_argument("--output", default=None, help="Override input.yaml modes.displacements_directory (default: mode_displacements).")
+    mode_displacements.add_argument("--minimum-frequency", type=float, default=None, help="Override input.yaml modes.minimum_frequency; automatic selection requires frequencies above this cm^-1 (default: 1.0).")
     mode_tensors = subparsers.add_parser("mode-tensors", help="Reconstruct mode tensors directly from collective displaced dielectric tensors.")
     add_workdir(mode_tensors)
-    mode_tensors.add_argument("--directory", default=None, help="Override input.yaml mode_displacements_directory (default: mode_displacements).")
-    mode_tensors.add_argument("--output", default=None, help="Override input.yaml mode_results_directory (default: mode_results).")
-    mode_tensors.add_argument("--source", choices=("vasprun.xml",), default=None, help="Override input.yaml dielectric_source (only vasprun.xml).")
-    mode_tensors.add_argument("--energies", nargs="+", type=float, help="Override input.yaml laser_energies (default: 0.00 eV).")
+    mode_tensors.add_argument("--directory", default=None, help="Override input.yaml modes.displacements_directory (default: mode_displacements).")
+    mode_tensors.add_argument("--output", default=None, help="Override input.yaml modes.results_directory (default: mode_results).")
+    mode_tensors.add_argument("--energies", nargs="+", type=float, help="Override input.yaml spectrum.energies (default: 0.00 eV).")
 
     args = parser.parse_args(argv)
     if args.command is None:
@@ -135,11 +127,11 @@ def main(argv: list[str] | None = None) -> int:
                 module.generate(q=args.q, modes=args.modes,
                                 output=args.output, minimum_frequency=args.minimum_frequency)
             else:
-                module.reconstruct(args.directory, args.source, args.energies, args.output)
+                module.reconstruct(directory=args.directory, energies=args.energies, output=args.output)
         _run_in_directory(args.workdir, collective)
-    elif args.command == "derivatives":
+    elif args.command == "tensors":
         def derive():
-            importlib.import_module("spectropy_derivatives").run_derivatives(
+            importlib.import_module("spectropy_tensors").run_tensors(
                 use_saved_basis=args.saved_basis, difference_scheme=args.difference,
                 equilibrium_vasprun=args.equilibrium_vasprun)
         _run_in_directory(args.workdir, derive)
