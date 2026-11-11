@@ -38,6 +38,57 @@ def project_site_tensor(tensor, rotations):
     return projected
 
 
+def project_reciprocal_site_tensor(tensor, rotations):
+    """Project D[alpha,beta,i] onto site symmetry and dielectric reciprocity.
+
+    Transpose, not conjugate transpose: real and imaginary parts are each
+    symmetric for reciprocal nonmagnetic response. The projectors commute.
+    Not applicable to magneto-optical response. No acoustic sum rule is added.
+    """
+    projected = project_site_tensor(tensor, rotations)
+    return .5 * (projected + projected.swapaxes(0, 1))
+
+
+def project_crystal_tensor_field(tensors, lattice, positions, rotations, translations,
+                                 species=None, tolerance=1e-4):
+    """Equal-weight least-squares projection of a complete Cartesian field.
+
+    D[atom,alpha,beta,i] includes every atom, with all three Cartesian
+    derivative slices. Complete space-group averaging enforces equivalent-atom
+    covariance and site constraints simultaneously. Dielectric transpose
+    symmetrization adds reciprocity; real/imaginary parts are treated linearly.
+    No acoustic sum rule, mode projection, or volume factor is introduced.
+    For nonorthogonal/mixed-direction observations use a constrained fit in
+    observation space instead, rather than this Cartesian Frobenius loss.
+    """
+    tensors=np.asarray(tensors);lattice=np.asarray(lattice,dtype=float)
+    positions=np.asarray(positions,dtype=float);rotations=np.asarray(rotations)
+    translations=np.asarray(translations,dtype=float)
+    n=len(positions)
+    if tensors.shape!=(n,3,3,3) or not np.isfinite(tensors).all():
+        raise ValueError('Crystal projection requires finite Cartesian tensors for every atom')
+    if rotations.ndim!=3 or rotations.shape[1:]!=(3,3) or not len(rotations) or translations.shape!=(len(rotations),3):
+        raise ValueError('Invalid space-group operations')
+    result=np.zeros_like(tensors,dtype=np.result_type(tensors,float))
+    for w,t in zip(rotations,translations):
+        r=frac_to_cart_rotation(w,lattice)
+        if not np.allclose(r@r.T,np.eye(3),atol=1e-8,rtol=0):
+            raise ValueError('Space-group Cartesian rotation must be orthogonal')
+        delta=(positions@w.T+t)[:,None,:]-positions[None,:,:]
+        delta-=np.rint(delta)
+        distance=np.linalg.norm(delta@lattice,axis=2)
+        if species is not None:
+            symbols=np.asarray(species)
+            if len(symbols)!=n:raise ValueError('Species length differs from tensor field')
+            distance=np.where(symbols[:,None]==symbols[None,:],distance,np.inf)
+        permutation=distance.argmin(axis=1)
+        if len(set(permutation))!=n or np.any(distance[np.arange(n),permutation]>tolerance):
+            raise ValueError('Space-group operation does not bijectively map the atomic structure')
+        transformed=np.einsum('ac,bd,ij,ncdj->nabi',r,r,r,tensors)
+        result[permutation]+=transformed/len(rotations)
+    return .5*(result+result.swapaxes(1,2))
+
+
 def project_representatives(real, imaginary, site_symmetries, lattice, atom_mapping):
     """Project measured representatives only; never discard extra measured atoms."""
     if set(real) != set(atom_mapping.values()) or set(imaginary) != set(real):
@@ -46,8 +97,8 @@ def project_representatives(real, imaginary, site_symmetries, lattice, atom_mapp
         if atom not in site_symmetries:
             raise ValueError(f'Missing site group for representative atom {atom}')
         rotations = [frac_to_cart_rotation(r, lattice) for r in site_symmetries[atom]['rotations']]
-        real[atom] = project_site_tensor(real[atom], rotations)
-        imaginary[atom] = project_site_tensor(imaginary[atom], rotations)
+        real[atom] = project_reciprocal_site_tensor(real[atom], rotations)
+        imaginary[atom] = project_reciprocal_site_tensor(imaginary[atom], rotations)
 
 
 def _direction_index(direction, known_directions, atol=1e-6):
@@ -137,8 +188,33 @@ def _validate_difference(scheme, equilibrium):
         raise ValueError("Forward differences require a finite equilibrium dielectric tensor")
 
 
+def fit_allowed_tensor(slices, rotations):
+    """Fit ONLY measured directional responses in the reciprocal site subspace.
+
+    Unmeasured directions never enter as independent observations. The fitted
+    representative is constrained before any equivalent-atom transfer.
+    """
+    eye = np.eye(27).reshape(27,3,3,3)
+    projector = np.column_stack([project_reciprocal_site_tensor(e, rotations).ravel() for e in eye])
+    values, vectors = np.linalg.eigh((projector+projector.T)/2)
+    basis = vectors[:, values > .5].reshape(3,3,3,-1)
+    if basis.shape[-1] == 0:
+        return np.zeros((3,3,3), dtype=np.result_type(*[s for _,s in slices]))
+    design=[]; target=[]
+    for direction, response in slices:
+        length=np.linalg.norm(direction)
+        response=.5*(response+response.T)  # reciprocal measured response first
+        design.append(np.einsum('abip,i->abp',basis,direction/length).reshape(9,-1))
+        target.append((response/length).ravel())
+    design=np.vstack(design);target=np.concatenate(target)
+    coefficients,_,rank,_=np.linalg.lstsq(design,target,rcond=1e-10)
+    if rank != basis.shape[-1]:
+        raise ValueError('Measured seed directions do not determine the site-allowed tensor')
+    return np.einsum('abip,p->abi',basis,coefficients)
+
+
 def compute_atom_tensor(measured, site_symmetry_cart, atol=1e-4,
-                        difference_scheme="central", equilibrium=None):
+                        difference_scheme="central", equilibrium=None, constrained=False):
     _validate_difference(difference_scheme, equilibrium)
     by_axis = {}
     for direction, epsilon in measured:
@@ -164,6 +240,8 @@ def compute_atom_tensor(measured, site_symmetry_cart, atol=1e-4,
         # derivatives do not depend on the spread of the microscopic step sizes.
         step = np.mean([magnitude for _, magnitude in sides.values()])
         slices.append((direction, (positive - negative) / (2 * step)))
+    if constrained:
+        return fit_allowed_tensor(slices, site_symmetry_cart)
     if len(slices) == 3:
         result = np.zeros((3, 3, 3))
         for direction, tensor in slices:
@@ -183,7 +261,7 @@ def expand_to_equivalent_atoms(measured_tensors, atom_mapping, mapping_matrices_
 
 
 def calculate_derivatives(measurements, lattice, site_symmetries=None,
-                          difference_scheme="central", equilibrium=None):
+                          difference_scheme="central", equilibrium=None, constrained=False):
     site_symmetries = {} if site_symmetries is None else site_symmetries
     real = {}
     imaginary = {}
@@ -191,9 +269,9 @@ def calculate_derivatives(measurements, lattice, site_symmetries=None,
         site_symmetry = site_symmetries.get(atom, {"rotations": []})
         rotations = np.array([frac_to_cart_rotation(rotation, lattice) for rotation in site_symmetry["rotations"]])
         real[atom] = compute_atom_tensor([(direction, tensor) for direction, tensor, _ in values], rotations,
-            difference_scheme=difference_scheme, equilibrium=None if equilibrium is None else equilibrium[0])
+            difference_scheme=difference_scheme, equilibrium=None if equilibrium is None else equilibrium[0], constrained=constrained)
         imaginary[atom] = compute_atom_tensor([(direction, tensor) for direction, _, tensor in values], rotations,
-            difference_scheme=difference_scheme, equilibrium=None if equilibrium is None else equilibrium[1])
+            difference_scheme=difference_scheme, equilibrium=None if equilibrium is None else equilibrium[1], constrained=constrained)
     return real, imaginary
 
 
@@ -201,9 +279,7 @@ def reconstruct_derivatives(measurements, lattice, site_symmetries, atom_mapping
                             difference_scheme="central", equilibrium=None, site_symmetry_projection=False):
     mapping_matrices_cart = {pair: frac_to_cart_rotation(rotation, lattice) for pair, rotation in mapping_matrices_fractional.items()}
     real, imaginary = calculate_derivatives(measurements, lattice, site_symmetries,
-                                          difference_scheme, equilibrium)
-    if site_symmetry_projection:
-        project_representatives(real, imaginary, site_symmetries, lattice, atom_mapping)
+                                          difference_scheme, equilibrium, constrained=site_symmetry_projection)
     return (
         expand_to_equivalent_atoms(real, atom_mapping, mapping_matrices_cart),
         expand_to_equivalent_atoms(imaginary, atom_mapping, mapping_matrices_cart),
@@ -344,29 +420,41 @@ def read_fractional_bases(path, displacements, lattice, site_symmetries):
     return bases
 
 
-def compute_fractional_atom_tensor(measured, site_symmetry_frac, lattice, atol=1e-6, basis=None,
-                                   difference_scheme="central", equilibrium=None):
-    """Central differences along Phonopy's fractional directions for one atom.
+def fractional_finite_differences(measured, site_symmetry_frac, lattice, atol=1e-6,
+                                difference_scheme="central", equilibrium=None):
+    """Measured seed responses only, before a basis solve or denoising.
 
-    ``measured`` holds (Cartesian displacement, eps) pairs as read from
-    vasprun.xml. A missing -u partner is synthesized from a site-symmetry
-    operation that maps u onto -u, as in Phonopy's ``is_plusminus="auto"``.
+    Responses are per unit fractional path parameter. The physical derivative
+    is response / norm(unit @ lattice). A signed pair supplies one observation.
     """
     _validate_difference(difference_scheme, equilibrium)
     pairs = _fractional_pairs(measured, lattice, atol)
     slices = []
     for unit, length, sides in pairs:
+        generated = False
         if difference_scheme == "forward":
-            slices.append((unit, (sides[1] - equilibrium) / length))
+            slices.append((unit, (sides[1] - equilibrium) / length, length, generated))
             continue
         if -1 not in sides:
             for rotation in site_symmetry_frac:
                 if np.allclose(rotation @ unit, -unit, atol=atol):
                     sides[-1] = rotate_slice(frac_to_cart_rotation(rotation, lattice), sides[1])
+                    generated = True
                     break
             else:
                 raise ValueError(f"No site-symmetry operation maps fractional direction {unit} to its negative")
-        slices.append((unit, (sides[1] - sides[-1]) / (2 * length)))
+        slices.append((unit, (sides[1] - sides[-1]) / (2 * length), length, generated))
+    return slices
+
+
+def compute_fractional_atom_tensor(measured, site_symmetry_frac, lattice, atol=1e-6, basis=None,
+                                   difference_scheme="central", equilibrium=None, constrained=False):
+    """Solve measured directional differences in Cartesian tensor components."""
+    slices = [(unit, response) for unit, response, _, _ in fractional_finite_differences(
+        measured, site_symmetry_frac, lattice, atol, difference_scheme, equilibrium)]
+    if constrained:
+        return fit_allowed_tensor([(unit @ lattice, response) for unit,response in slices],
+            [frac_to_cart_rotation(r,lattice) for r in site_symmetry_frac])
     return reconstruct_fractional_tensor(slices, site_symmetry_frac, lattice, basis=basis)
 
 
@@ -379,11 +467,9 @@ def reconstruct_fractional_derivatives(measurements, lattice, site_symmetries, a
         rotations = site_symmetries.get(atom, {"rotations": np.eye(3)[None]})["rotations"]
         basis = None if bases is None else bases["atoms"][str(atom)]
         real[atom] = compute_fractional_atom_tensor([(direction, tensor) for direction, tensor, _ in values], rotations, lattice, basis=basis,
-            difference_scheme=difference_scheme, equilibrium=None if equilibrium is None else equilibrium[0])
+            difference_scheme=difference_scheme, equilibrium=None if equilibrium is None else equilibrium[0], constrained=site_symmetry_projection)
         imaginary[atom] = compute_fractional_atom_tensor([(direction, tensor) for direction, _, tensor in values], rotations, lattice, basis=basis,
-            difference_scheme=difference_scheme, equilibrium=None if equilibrium is None else equilibrium[1])
-    if site_symmetry_projection:
-        project_representatives(real, imaginary, site_symmetries, lattice, atom_mapping)
+            difference_scheme=difference_scheme, equilibrium=None if equilibrium is None else equilibrium[1], constrained=site_symmetry_projection)
     return (
         expand_to_equivalent_atoms(real, atom_mapping, mapping_matrices_cart),
         expand_to_equivalent_atoms(imaginary, atom_mapping, mapping_matrices_cart),

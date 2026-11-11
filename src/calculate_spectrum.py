@@ -43,6 +43,9 @@ def read_band_yaml(filepath="band.yaml"):
 
 def read_dielectric_derivatives(filepath, total_atoms):
     print(f"Reading atomic Raman tensors from {filepath}...")
+    if str(filepath).endswith('.json'):
+        from spectropy_directional import reconstruct_directional_file
+        return reconstruct_directional_file(filepath, total_atoms)
     with open(filepath, 'r') as f:
         lines = f.readlines()
         
@@ -183,7 +186,10 @@ def run_raman_tensor(dielectric_derivatives_path=None, _phonons=None, output_pre
 
     print("Writing final output files...")
     
-    energy = os.path.basename(dielectric_derivatives_path).split("epsilon_derivative_", 1)[1]
+    filename = os.path.basename(dielectric_derivatives_path)
+    energy = (filename.removeprefix('raw_directional_derivative_').removesuffix('.json')
+              if filename.startswith('raw_directional_derivative_')
+              else filename.split('epsilon_derivative_', 1)[1])
 
     def representation(index):
         if representations is not None and index < len(representations):
@@ -227,6 +233,9 @@ def run_raman_tensors_for_input(input_path="input", _phonons=None):
     for energy in settings.laser_energies:
         derivative_path = f"epsilon_derivative_{energy:.2f}"
         raw_path = f"raw_{derivative_path}"
+        directional_path = f"raw_directional_derivative_{energy:.2f}.json"
+        if os.path.isfile(directional_path):
+            raw_path = directional_path
         corrected_path = f"corrected_{derivative_path}"
         # Older unprojected datasets may only have the legacy filename. Never
         # label an active, potentially corrected field as raw when denoising.

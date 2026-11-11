@@ -90,7 +90,7 @@ optional Bose/phonon-frequency factor.
 Run from `RUN_DIR`:
 
 ```bash
-spectropy displacements --mode fractional
+spectropy displacements --mode minimal --basis fractional
 spectropy symmetry
 ```
 
@@ -188,13 +188,20 @@ spectropy derivatives
 For the supplied `input`, expect:
 
 - `dielectric_tensor_0.00`: sampled dielectric responses.
-- `raw_epsilon_derivative_0.00`: reconstructed derivatives before site averaging.
+- `raw_directional_derivative_0.00.json`: measured-direction raw responses, unit
+  direction vectors, step lengths and sign provenance; no Cartesian basis solve.
 - `corrected_epsilon_derivative_0.00`: site-projected derivatives.
 - `epsilon_derivative_0.00`: the active corrected field for downstream consumers.
-- `site_projection_residuals_0.00.csv`: per-atom raw-to-corrected differences.
+- `site_projection_residuals_0.00.csv`: measured-direction raw minus denoised
+  back-contraction residuals, one row per measured atom/direction.
+- `directional_residual_summary_0.00.json`: aggregate measured-direction metric.
 
-“Raw” still includes symmetry reconstruction. Site averaging acts on the full
-three-slice per-atom tensor, not just forbidden entries. Projection enforces
+Raw responses may use a symmetry-generated negative partner, explicitly
+flagged in the file, but contain no reconstructed directions or atoms.
+Denoising jointly fits the site/reciprocity-allowed tensor, not just forbidden
+entries; residuals compare it to the raw responses along the sampled directions.
+Raw spectra reconstruct Cartesian derivatives internally without saving a raw
+Cartesian derivative file. Projection enforces
 symmetry consistency; it cannot detect or remove every numerical error. The
 derivative files include the cell-volume/(4π) factor; do not multiply it again.
 
@@ -221,7 +228,7 @@ The selected outputs include:
 
 The standard plot command plots the **selected**, unprefixed data, not both
 raw and corrected variants. The PNG is normalized for display; the broadened
-numerical spectrum is unnormalized. A 1 cm⁻¹ Lorentzian FWHM controls display
+numerical spectrum is unnormalized. A 1 cm⁻¹ Lorentzian HWHM controls display
 broadening, not the accuracy of the electronic calculation. No reference peak
 positions or expected intensity ratios are supplied until the data are finalized.
 
@@ -242,6 +249,6 @@ outputs first, or use a separate working copy. Likewise, additional photon
 energies need no new DFT calculations only if the existing dielectric tables
 cover them. Rerun derivatives, spectrum, and plot after changing energies.
 
-For more detail, see [site projection](../../docs/site_projection.md) and
+For more detail, see [derivative reconstruction](../../README.md#4-calculate-dielectric-derivatives) and
 the [main workflow documentation](../../README.md). Collective-mode displacements
 are a different route; see the [separate example](../MoS2_Mode_Displacements/README.md).

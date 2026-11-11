@@ -13,6 +13,8 @@ from spectropy_config import read_settings
 from spectropy_displacements import read_displacement_mode, read_displacements
 from spectropy_structure import read_structure
 from spectropy_paths import displacement_root
+from spectropy_directional import directional_document, save_directional, directional_residuals
+from reconstruct_dielectric_derivatives import project_crystal_tensor_field
 
 
 def _write_dielectric_log(path, target_frequency, measurements, positions):
@@ -44,40 +46,35 @@ def _write_derivatives(path, target_frequency, lattice, positions, real_tensors,
                     output.write(" ".join(f"{value:.16e}" for value in row) + "\n")
 
 
-def write_derivative_outputs(energy, structure, raw, corrected=None, representatives=None, directory="."):
-    """Save explicit raw/corrected fields and unweighted representative diagnostics.
+def write_derivative_outputs(energy, structure, raw, corrected=None, representatives=None, directory=".", *, directional=None):
+    """Save raw measured-direction responses and the active Cartesian field.
 
-    The legacy filename remains the active field used by spectrum consumers.
-    Residuals use unscaled dielectric derivatives; a second column reports the
-    same norm in the volume/(4 pi)-scaled units of the derivative files.
+    Raw Cartesian reconstruction is internal only. Residuals compare measured
+    responses with corrected Cartesian tensors contracted onto the same seeds.
     """
+    if directional is None:
+        raise ValueError('Measured directional responses are required; Cartesian tensors cannot substitute for raw observations')
     def write(name, tensors):
         _write_derivatives(os.path.join(directory, name), energy, structure.lattice,
                            structure.fractional_positions, *tensors)
         print(f"Wrote {name}")
-    write(f"raw_epsilon_derivative_{energy:.2f}", raw)
+    save_directional(os.path.join(directory, f"raw_directional_derivative_{energy:.2f}.json"), directional)
     write(f"epsilon_derivative_{energy:.2f}", raw if corrected is None else corrected)
     if corrected is None:
         return []
     write(f"corrected_epsilon_derivative_{energy:.2f}", corrected)
-    reps = set(representatives)
-    factor = abs(np.linalg.det(structure.lattice)/(4*np.pi))
-    rows = []
-    for atom in sorted(raw[0]):
-        delta = (raw[0][atom]-corrected[0][atom]) + 1j*(raw[1][atom]-corrected[1][atom])
-        residual = float(np.linalg.norm(delta))
-        rows.append(dict(atom=atom, species=structure.atom_symbols[atom-1],
-                         representative=atom in reps, residual=residual,
-                         stored_units_residual=factor*residual))
-        print(f"Atom {atom} ({structure.atom_symbols[atom-1]}), representative={atom in reps}: "
-              f"raw-to-corrected residual = {residual:.10e} (dielectric derivative units)")
+    rows, summary = directional_residuals(directional, corrected)
+    for row in rows:
+        row['species'] = structure.atom_symbols[row['atom']-1]
+        print(f"Atom {row['atom']}, measured direction {row['direction_index']}: "
+              f"back-contracted residual = {row['residual']:.10e} (1/angstrom)")
     path = os.path.join(directory, f"site_projection_residuals_{energy:.2f}.csv")
     with open(path, 'w', newline='') as output:
         writer = csv.DictWriter(output, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
-    mean = np.mean([row['residual'] for row in rows if row['representative']])
-    print(f"Unweighted mean over {len(reps)} representative atoms: {mean:.10e} (dielectric derivative units)")
+    save_directional(os.path.join(directory, f"directional_residual_summary_{energy:.2f}.json"), summary)
+    print(f"Measured-direction relative norm-sum residual: {summary['relative_norm_sum']}")
     return rows
 
 
@@ -110,9 +107,7 @@ def run_derivatives(input_path="input", use_saved_basis=False,
             raise ValueError('Equilibrium reference is not the undisplaced structure')
     displacements = read_displacements("displacements.dat")
     mode = read_displacement_mode("displacements.dat")
-    if site_projection and mode == 'full':
-        raise ValueError('Representative site projection requires a symmetry-reduced displacement set')
-    if mode in {"atoms", "minimal", "fractional"}:
+    if mode in {"atoms", "minimal"} or site_projection:
         if not os.path.exists("symmetry"):
             print("***** symmetry not found *****")
             sys.exit(1)
@@ -120,7 +115,7 @@ def run_derivatives(input_path="input", use_saved_basis=False,
         _, _, mapping_matrices = compute_mapping_matrices(structure.fractional_positions, rotations, translations, atom_mapping)
         site_symmetries = read_site_symmetries("symmetry")
     bases = None
-    if mode == "fractional":
+    if mode == "minimal":
         if use_saved_basis and os.path.exists("fractional_basis.json"):
             bases = read_fractional_bases("fractional_basis.json", displacements, structure.lattice, site_symmetries)
         else:
@@ -139,14 +134,25 @@ def run_derivatives(input_path="input", use_saved_basis=False,
     for energy, equilibrium, measurements in zip(energies, equilibria, measured_by_energy):
         _write_dielectric_log(f"dielectric_tensor_{energy:.2f}", energy, measurements, structure.fractional_positions)
         def reconstruct(projected):
-            if mode == "full":
-                return calculate_derivatives(measurements, structure.lattice,
-                    difference_scheme=difference_scheme, equilibrium=equilibrium)
-            solver = reconstruct_fractional_derivatives if mode == "fractional" else reconstruct_derivatives
-            kwargs = {'bases': bases} if mode == 'fractional' else {}
-            return solver(measurements, structure.lattice, site_symmetries, atom_mapping, mapping_matrices,
+            sites = site_symmetries if mode != "full" else {}
+            mapping = atom_mapping if mode != "full" else {atom: atom for atom in measurements}
+            transfers = mapping_matrices if mode != "full" else {}
+            return reconstruct_fractional_derivatives(measurements, structure.lattice, sites, mapping, transfers,
                           difference_scheme=difference_scheme, equilibrium=equilibrium,
-                          site_symmetry_projection=projected, **kwargs)
-        raw = reconstruct(False)
-        corrected = reconstruct(True) if site_projection else None
-        write_derivative_outputs(energy, structure, raw, corrected, measurements.keys())
+                          site_symmetry_projection=projected, bases=bases)
+        sites = site_symmetries if mode != 'full' else {}
+        mapping = atom_mapping if mode != 'full' else {a:a for a in measurements}
+        transfers = mapping_matrices if mode != 'full' else {}
+        directional = directional_document(energy, structure, measurements, sites,
+            mapping, transfers, difference_scheme, equilibrium, bases)
+        if site_projection and mode=='full':
+            raw=reconstruct(False)
+            field=np.array([raw[0][a]+1j*raw[1][a] for a in range(1,structure.natoms+1)])
+            projected=project_crystal_tensor_field(field,structure.lattice,structure.fractional_positions,
+                rotations,translations,species=structure.atom_symbols)
+            corrected=({a:projected[a-1].real for a in range(1,structure.natoms+1)},
+                       {a:projected[a-1].imag for a in range(1,structure.natoms+1)})
+        else:
+            raw = reconstruct(False) if not site_projection else None
+            corrected = reconstruct(True) if site_projection else None
+        write_derivative_outputs(energy, structure, raw, corrected, measurements.keys(), directional=directional)
