@@ -4,7 +4,7 @@ from matplotlib import rc
 import os
 import re
 import shutil
-from spectropy_config import read_settings
+from spectropy_config import DEFAULT_INPUT, read_settings
 
 if shutil.which('latex'):
     rc('text', usetex=True)
@@ -89,7 +89,7 @@ def format_mode_for_latex(mode_str):
     return f'${mode_str}$'
 
 
-def read_broadening_settings(input_path="input"):
+def read_broadening_settings(input_path=DEFAULT_INPUT):
     settings = read_settings(input_path)
     return settings.broadening_fwhm, "g" if settings.broadening_type == "gaussian" else "l"
 

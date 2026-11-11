@@ -2,6 +2,20 @@
 
 ## Unreleased — supported workflow simplification
 
+- SpectroPy settings now use `input.yaml`: native YAML lists, booleans, and
+  `#` comments replace the positional/text parser. All stages and examples use
+  the new filename; explicit CLI settings still override file values.
+  Duplicate/unknown keys and invalid values are rejected. Existing calculation
+  inputs are not migrated automatically.
+- Advanced usage is in `docs.md`; the README retains the basic workflow.
+- Displacement selection is now `symmetry: on` (minimal), `off` (full), or
+  `atoms`, with `--symmetry` as the CLI override. The old `displacement_mode`
+  key and `--mode` option are removed. The selection algorithms and existing
+  displacement-record format are unchanged.
+- `ra_pos_equilibrium` is generated and staged only for
+  `difference_scheme: forward`. Central generation leaves any existing
+  equilibrium directory untouched; forward-reference documentation is in
+  advanced usage rather than the basic workflow.
 - Supplied `INCAR`, `KPOINTS`, and `POTCAR` inputs are automatically symlinked
   into atomic, equilibrium, and collective-mode calculation directories.
   Existing inputs are never replaced; missing inputs produce a warning.
@@ -10,7 +24,7 @@
 - Collective-mode generation no longer writes the redundant `runRA` input-copy
   script; automatic symlinks replace that staging step.
 - Settings for displacement selection/basis, mode generation, and optional
-  reference/basis/output paths can be kept in `input`. Explicit CLI options
+  reference/basis/output paths can be kept in `input.yaml`. Explicit CLI options
   override the file for one invocation; omitted options use the file's settings.
 - Geometry uses named `incident_polarization`, `scattered_polarization`, and
   `surface_normal` entries; examples and newly written settings use this format.
