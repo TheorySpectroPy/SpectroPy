@@ -1,4 +1,4 @@
-"""Collective normal-mode displacements, with validated partner/sign reduction.
+"""Direct Raman-active normal-mode displacements; optional experimental reduction.
 
 Q is in Angstrom sqrt(amu), as in Liangbo's raman_dis_mode.f90.
 No Fortran utility or atomic-derivative field is needed.
@@ -115,10 +115,17 @@ def _reference(reference):
     return "ref_poscar.vasp" if Path("ref_poscar.vasp").exists() else "CONTCAR"
 
 
-def generate(q=.01, modes=None, reference=None, reduce=True,
+def generate(q=.01, modes=None, reference=None, reduce=False,
              reuse_sign=True, output="mode_displacements", minimum_frequency=1.0):
+    """Enumerate +/-Q for every Raman-active partner by default.
+
+    Symmetry selects active groups but does not reconstruct measurements unless
+    reduce=True. Explicit mode IDs bypass automatic activity/frequency filters.
+    """
     if not np.isfinite(q) or q <= 0:
         raise ValueError("Q must be finite and positive (Angstrom sqrt(amu))")
+    if not np.isfinite(minimum_frequency) or minimum_frequency < 0:
+        raise ValueError("Minimum frequency must be finite and nonnegative (cm^-1)")
     reference = _reference(reference)
     structure = read_structure(reference)
     phonons = read_gamma_modes(complex_eigenvectors=True)
@@ -134,11 +141,17 @@ def generate(q=.01, modes=None, reference=None, reduce=True,
     requested = set(range(nmodes)) if modes is None else {int(m)-1 for m in modes}
     if not requested or min(requested) < 0 or max(requested) >= nmodes:
         raise ValueError("Requested mode index outside 1..3N")
-    if reduce:
+    # Activity selection requires the actual crystal representation even when
+    # every partner and both signs will be computed independently.
+    symmetry_validated = reduce or modes is None
+    labels = {}
+    if symmetry_validated:
         entries = yaml.safe_load(Path("irreps.yaml").read_text())
         if not np.allclose(entries["q-position"], 0, atol=1e-8):
             raise ValueError("irreps.yaml must describe Gamma")
         groups = [np.asarray(e["band_indices"],dtype=int)-1 for e in entries["normal_modes"]]
+        labels = {int(i): e.get("ir_label", "---")
+                  for e in entries["normal_modes"] for i in e["band_indices"]}
         operations = symmetry_operations(structure)
         representations, leakages = mode_representations(phonons, operations, groups, tolerance=1e-5)
         rotations = [r for _,r in operations]
@@ -146,6 +159,20 @@ def generate(q=.01, modes=None, reference=None, reduce=True,
         groups = [np.array([m]) for m in range(nmodes)]
         representations = [np.ones((1,1,1)) for _ in groups]
         rotations = [np.eye(3)]
+    planned, skipped = [], []
+    for group, gamma in zip(groups, representations):
+        if not requested.intersection(group.tolist()):
+            continue
+        frequency = phonons.frequencies_thz[group]*33.356407889
+        if np.ptp(frequency) > 1e-2:
+            raise ValueError("Partner group not frequency-degenerate to 0.01 cm^-1")
+        if modes is None and (np.min(frequency) <= minimum_frequency or
+                              allowed_tensor_dimension(gamma, rotations) == 0):
+            skipped.extend((group+1).tolist())
+            continue
+        planned.append((group, gamma))
+    if not planned:
+        raise ValueError("No Raman-active modes above the frequency cutoff; no displacements generated")
     root = Path(output)
     if root.exists():
         raise FileExistsError(f"Use a fresh mode-displacement directory: {root}")
@@ -159,28 +186,28 @@ def generate(q=.01, modes=None, reference=None, reduce=True,
                     frequencies_thz=phonons.frequencies_thz.tolist(),
                     phonon_to_reference_1based=(mapping+1).tolist(),
                     origin_shift=shift.tolist(), alignment_error_angstrom=error,
-                    groups=[], skipped=[], reduction=reduce)
+                    groups=[], skipped=skipped, reduction=reduce,
+                    selection="raman_active" if modes is None else "explicit",
+                    minimum_frequency_cm1=minimum_frequency,
+                    symmetry_validated=symmetry_validated)
     index_lines = []
-    for group, gamma in zip(groups, representations):
-        if not requested.intersection(group.tolist()):
-            continue
+    for group, gamma in planned:
         frequency = phonons.frequencies_thz[group]*33.356407889
-        if np.ptp(frequency) > 1e-2:
-            raise ValueError("Partner group not frequency-degenerate to 0.01 cm^-1")
-        if modes is None and (np.mean(frequency) <= minimum_frequency or
-                              allowed_tensor_dimension(gamma, rotations) == 0):
-            manifest["skipped"].extend((group+1).tolist())
-            continue
-        seeds = orbit_plan(gamma, reuse_sign) if reduce else [dict(coefficients=[1.],minus_operation=None)]
-        block = dict(modes=(group+1).tolist(), representations=np.asarray(gamma).real.tolist(), seeds=[])
+        seeds = (orbit_plan(gamma, reuse_sign) if reduce else
+                 [dict(coefficients=row.tolist(), minus_operation=None) for row in np.eye(len(group))])
+        block = dict(modes=(group+1).tolist(), representations=np.asarray(gamma).real.tolist(),
+                     ir_label=labels.get(int(group[0]+1), "---"), seeds=[])
         for number, seed in enumerate(seeds):
             # Mode index plus optional seed suffix; JSON is authoritative for
             # rotated partner combinations, not the filename alone.
-            stem = f"mode{group[0]+1}" + (f"_seed{number+1}" if len(seeds)>1 else "")
+            mode_id = int(group[0]+1 if reduce else group[number]+1)
+            stem = f"mode{mode_id}" + (f"_seed{number+1}" if reduce and len(seeds)>1 else "")
             displacement = q*np.einsum("p,pni->ni", seed["coefficients"], vectors[group])
             record = dict(**seed, label=stem, positive=f"ra_POSCAR_{stem}a",
                           negative=None if seed["minus_operation"] is not None else f"ra_POSCAR_{stem}b",
-                          cartesian_displacement=displacement.tolist())
+                          cartesian_displacement=displacement.tolist(),
+                          mode_index=mode_id,
+                          max_atomic_displacement_angstrom=float(np.max(np.linalg.norm(displacement, axis=1))))
             for sign, suffix in [(1,"a"),(-1,"b")]:
                 if sign == -1 and record["negative"] is None:
                     continue
@@ -195,13 +222,16 @@ def generate(q=.01, modes=None, reference=None, reduce=True,
                 lines += [" ".join(structure.symbols), " ".join(map(str,structure.counts)), "cart "]
                 lines += [" ".join(f"{x:.16f}" for x in row) for row in fractional @ structure.lattice]
                 (root/f"POSCAR_{stem}{suffix}").write_text("\n".join(lines)+"\n")
-            index_lines.append(f"{group[0]+1:3d}{np.mean(frequency):10.3f}{q:10.4f}\n")
+            seed_frequency = np.mean(frequency) if reduce else frequency[number]
+            index_lines.append(f"{mode_id:3d}{seed_frequency:10.3f}{q:10.4f}\n")
             block["seeds"].append(record)
         manifest["groups"].append(block)
     (root/"mode_index").write_text("".join(index_lines))
     (root/"mode_manifest.json").write_text(json.dumps(manifest,indent=2))
     (root/"README.txt").write_text(
         "Q units: Angstrom sqrt(amu). Physical displacement = Q * sum(c_p e_p/sqrt(m)).\n"
+        f"Partner/sign reduction: {reduce}. Without reduction each seed is one original mode,\n"
+        "and both signs of every selected mode are independently calculated.\n"
         "a = positive, b = negative. mode_index has representative mode, cm^-1, Q,\n"
         "matching Liangbo's columns. In reduced runs a seed can be a linear\n"
         "combination of degenerate partners: read mode_manifest.json coefficients;\n"
@@ -213,10 +243,9 @@ def generate(q=.01, modes=None, reference=None, reduce=True,
         'cd "$(dirname "$0")"\n'
         "for d in ra_POSCAR_mode*; do\n"
         '  [ -d "$d" ] || continue\n'
-        '  for f in INCAR KPOINTS POTCAR epsilon.in; do\n'
+        '  for f in INCAR KPOINTS POTCAR; do\n'
         '    [ ! -f "../$f" ] || cp "../$f" "$d/"\n'
         "  done\n"
-        '  [ ! -d ../pseudo ] || [ -e "$d/pseudo" ] || ln -s ../../pseudo "$d/pseudo"\n'
         "done\n")
     print(f"Generated {len(list(root.glob('ra_POSCAR_mode*')))} signed jobs for "
           f"{sum(len(g['modes']) for g in manifest['groups'])} mode partners in {root}")
@@ -281,7 +310,11 @@ def reconstruct(directory="mode_displacements", source="vasprun.xml", energies=N
                 negative = (rotations[operation] @ positive @ rotations[operation].T
                             if operation is not None else dielectric(seed["negative"], energy))
                 derivative = (positive-negative)/(2*data["q"])
-                for matrix, rotation in zip(gamma, rotations):
+                # Without reduction, use ONLY the directly calculated +/- pair.
+                # Symmetry used for activity selection must not average raw data.
+                images = (zip(gamma, rotations) if data["reduction"] else
+                          [(np.eye(len(block["modes"])), np.eye(3))])
+                for matrix, rotation in images:
                     directions.append(matrix @ seed["coefficients"])
                     responses.append((rotation @ derivative @ rotation.T).reshape(9))
             directions = np.asarray(directions).T
@@ -329,6 +362,10 @@ def reconstruct(directory="mode_displacements", source="vasprun.xml", energies=N
                         differences.append(rotation @ tensors[mode] @ rotation.T -
                                            np.einsum("p,pij->ij",np.asarray(gamma)[:,index],partners))
                     rho=np.sqrt(np.mean(np.sum(abs(np.asarray(differences))**2,axis=(1,2))))
+                    # An identity-only explicit-mode plan cannot measure full
+                    # crystal covariance; do not misreport its trivial zero.
+                    if not data.get("symmetry_validated", data["reduction"]):
+                        rho = float("nan")
                     writer.writerow([mode,data["frequencies_thz"][mode-1]*33.356407889,rho])
         with (destination/f"Raman_tensor_{energy:.2f}eV").open("w") as stream, \
              (destination/f"Raman_intensity_complex_{energy:.2f}eV").open("w") as intensity:

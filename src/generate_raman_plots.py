@@ -156,7 +156,7 @@ def run_automation():
     print(f"Scanning: {base_path}")
     
     fwhm, b_type = read_broadening_settings()
-    print(f"Broadening: {'Lorentzian' if b_type == 'l' else 'Gaussian'}, FWHM = {fwhm:g} cm-1")
+    print(f"Broadening: {'Lorentzian' if b_type == 'l' else 'Gaussian'}, HWHM = {fwhm/2:g} cm-1")
 
     count = 0
     broadened_count = 0

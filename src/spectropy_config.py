@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import re
+import math
 
 
 _SETTING_RE = re.compile(r"^([a-z_]+)\s*(?::|=|\s)\s*(.+)$", re.I)
@@ -15,13 +16,18 @@ class Settings:
     surface_normal: str | None = None
     laser_energies: tuple[float, ...] = (0.0,)
     displacement_amplitude: tuple[float, float, float] | None = None
-    broadening_fwhm: float = 1.0
+    broadening_hwhm: float = 1.0
     broadening_type: str = "lorentzian"
     polarization: str = "specific"
     frequency_cutoff_cm1: float | None = None
     difference_scheme: str = "central"
     dielectric_source: str = "vasprun.xml"
     site_symmetry_projection: bool = False
+
+    @property
+    def broadening_fwhm(self):
+        """Full width for internal line-shape routines; public settings use HWHM."""
+        return 2 * self.broadening_hwhm
 
 
 def _content_lines(path: Path) -> list[str]:
@@ -39,7 +45,7 @@ def read_settings(path: str | Path = "input") -> Settings:
         match = _SETTING_RE.match(line)
         if match and match.group(1).lower() in {
             "laser_energy", "laser_energies", "displacement_amplitude",
-            "broadening_fwhm", "broadening_type", "polarization", "cutoff",
+            "broadening_hwhm", "broadening_fwhm", "broadening_type", "polarization", "cutoff",
             "frequency_cutoff", "difference_scheme", "dielectric_source", "site_symmetry_projection",
         }:
             values[match.group(1).lower()] = match.group(2)
@@ -78,12 +84,16 @@ def read_settings(path: str | Path = "input") -> Settings:
     else:
         displacement_amplitude = None
 
+    if 'broadening_hwhm' in values and 'broadening_fwhm' in values:
+        raise ValueError('Specify broadening_hwhm or legacy broadening_fwhm, not both')
     try:
-        fwhm = float(values.get("broadening_fwhm", "1.0").split()[0])
+        hwhm = (float(values['broadening_fwhm'].split()[0]) / 2
+                if 'broadening_fwhm' in values else
+                float(values.get('broadening_hwhm', '1.0').split()[0]))
     except ValueError as error:
-        raise ValueError("broadening_fwhm must be numeric") from error
-    if fwhm <= 0:
-        raise ValueError("broadening_fwhm must be positive")
+        raise ValueError("broadening_hwhm must be numeric") from error
+    if not math.isfinite(hwhm) or hwhm <= 0:
+        raise ValueError("broadening_hwhm must be finite and positive")
     broadening_type = values.get("broadening_type", "lorentzian").lower()
     if broadening_type in {"l", "lorentzian"}:
         broadening_type = "lorentzian"
@@ -117,7 +127,7 @@ def read_settings(path: str | Path = "input") -> Settings:
         raise ValueError('site_symmetry_projection must be true or false')
     return Settings(
         vector(0), vector(1), geometry[2][0].lower() if len(geometry) >= 3 else None,
-        energies, displacement_amplitude, fwhm, broadening_type, polarization, frequency_cutoff_cm1,
+        energies, displacement_amplitude, hwhm, broadening_type, polarization, frequency_cutoff_cm1,
         difference_scheme, dielectric_source, projection == 'true',
     )
 
@@ -137,7 +147,7 @@ def write_settings(path: str | Path, settings: Settings) -> None:
         lines.append(f"cutoff: {settings.frequency_cutoff_cm1:g}")
     lines.extend([
         f"polarization: {settings.polarization}",
-        f"broadening_fwhm: {settings.broadening_fwhm:g}",
+        f"broadening_hwhm: {settings.broadening_hwhm:g}",
         f"broadening_type: {settings.broadening_type}",
         f"difference_scheme: {settings.difference_scheme}",
         f"dielectric_source: {settings.dielectric_source}",

@@ -1,4 +1,4 @@
-"""Symmetry consistency diagnostics and polarization-angle scans for Raman tensors."""
+"""Symmetry consistency diagnostics for Raman tensors."""
 
 from __future__ import annotations
 
@@ -163,27 +163,6 @@ def mode_covariance_residuals(tensors, operations, groups, representations):
     return per_mode, multiplets
 
 
-def angular_intensities(tensors, angles_degrees, surface_normal="z", scan="parallel"):
-    """Return |e_s^dagger R e_i|^2 for rotating linear polarizations (nmodes, nangles)."""
-    if surface_normal not in ("x", "y", "z") or scan not in ("parallel", "crossed"):
-        raise ValueError("surface_normal must be x/y/z and scan parallel/crossed")
-    tensors = np.asarray(tensors)
-    if tensors.ndim == 2:
-        tensors = tensors[None]
-    if tensors.ndim != 3 or tensors.shape[1:] != (3, 3) or not np.isfinite(tensors).all():
-        raise ValueError("Tensors must be finite 3x3 matrices")
-    angles = np.deg2rad(np.asarray(angles_degrees, dtype=float))
-    if angles.ndim != 1 or not np.isfinite(angles).all():
-        raise ValueError("Angles must be a finite one-dimensional array")
-    first, second = {"x": (1, 2), "y": (2, 0), "z": (0, 1)}[surface_normal]
-    incident = np.zeros((len(angles), 3))
-    incident[:, first], incident[:, second] = np.cos(angles), np.sin(angles)
-    if scan == "parallel":
-        scattered = incident
-    else:
-        scattered = np.zeros_like(incident)
-        scattered[:, first], scattered[:, second] = -np.sin(angles), np.cos(angles)
-    return np.abs(np.einsum("ti,mij,tj->mt", scattered, tensors, incident)) ** 2
 
 
 def _weights(frequencies, cutoff):
@@ -254,20 +233,6 @@ def _plot_check(output, energy, frequencies, residuals, style, prefix="symmetry_
     plt.close(fig)
 
 
-def _plot_angular(output, energy, frequencies, curves, labels, style):
-    plt = _plot_style(style)
-    for mode, (angles, values) in curves.items():
-        fig, axes = plt.subplots(1, 2, figsize=(10, 5), subplot_kw={"projection": "polar"}, layout="constrained")
-        maximum = max(values["original_parallel"].max(), values["original_crossed"].max())
-        for ax, scan in zip(axes, ("parallel", "crossed")):
-            curve = values[f"original_{scan}"]
-            ax.plot(np.deg2rad(angles), curve, color="#2470a0")
-            ax.set_ylim(0, 1.15 * maximum if maximum else 1)
-            ax.set_title(scan.capitalize())
-            ax.tick_params(labelsize=9)
-        fig.suptitle(f"Mode {mode}, {labels[mode - 1]}, {frequencies[mode - 1]:.2f} cm⁻¹; {energy:.2f} eV\nRadius: Raman intensity (arb. units)")
-        fig.savefig(output / f"angular_intensity_mode{mode}_{energy:.2f}eV.png", dpi=250)
-        plt.close(fig)
 
 
 def _mode_analysis(energies, symmetry_average=True):
@@ -422,7 +387,7 @@ def run_mode_check(energies=None, output="check", plot=False,
         "Direct constraint: S_g R_k S_g^T = sum_p Gamma_pk(g) R_p. No atomic projection.\n"
         "Gamma_pk = <e_p|T(g)e_k> uses the band.yaml mass-weighted eigenvector basis.\n"
         "Phonon atoms are aligned to derivative atoms; mapping is saved separately.\n"
-        "Spectrum and angular contractions also require geometry-based atom registration.\n"
+        "Spectrum contractions also require geometry-based atom registration.\n"
         f"Fractional origin shift (phonon to derivative): {origin_shift.tolist()}; max mismatch {alignment_error:g} Angstrom.\n"
         "irreps.yaml supplies partner groups; closure and supplied characters are validated.\n"
         f"Subspace tolerance = {subspace_tolerance:g}. Invalid groups have status flags and NaN residuals.\n"
@@ -432,45 +397,4 @@ def run_mode_check(energies=None, output="check", plot=False,
         "Individual partner residuals depend on the eigenvector basis. Zero tensors have zero residual.\n"
         "Structural symmetries must preserve the electronic/magnetic state; this is assumed.\n"
         "This checks covariance, not total numerical accuracy; derivatives are never changed.\n"
-    )
-
-
-def run_angular(modes, energies=None, output="angular", angle_step=1.0,
-                surface_normal=None, plot=False, style=None):
-    """Export selected mode polarization scans, independently of run_check."""
-    if not np.isfinite(angle_step) or not 0 < angle_step <= 360:
-        raise ValueError("angle_step must be between 0 and 360 degrees")
-    selected_modes = list(dict.fromkeys(modes))
-    if not selected_modes:
-        raise ValueError("At least one mode number is required")
-    output = Path(output)
-    output.mkdir(parents=True, exist_ok=True)
-    angles = np.append(np.arange(0, 360, angle_step), 360.0)
-    for energy, phonons, original_modes, _, labels, settings in _mode_analysis(energies, symmetry_average=False):
-        if any(index < 1 or index > len(phonons.frequencies_thz) for index in selected_modes):
-            raise ValueError(f"Mode numbers must lie between 1 and {len(phonons.frequencies_thz)}")
-        normal = surface_normal or settings.surface_normal or "z"
-        if normal not in ("x", "y", "z"):
-            raise ValueError("Surface normal must be x, y, or z")
-        weights = _weights(phonons.frequencies_thz, settings.frequency_cutoff_cm1)
-        frequencies = phonons.frequencies_thz * CM_PER_THZ
-        curves = {}
-        for mode in selected_modes:
-            values = {}
-            for scan in ("parallel", "crossed"):
-                values[f"original_{scan}"] = angular_intensities(original_modes[mode - 1], angles, normal, scan)[0] * weights[mode - 1]
-            keys = tuple(values)
-            _write_csv(output / f"angular_intensity_mode{mode}_{energy:.2f}eV.csv",
-                       ("angle_degrees", *keys), zip(angles, *(values[key] for key in keys)))
-            curves[mode] = (angles, values)
-        if plot:
-            _plot_angular(output, energy, frequencies, curves, labels, style)
-        print(f"Wrote {len(curves)} angular scans for {energy:.2f} eV to {output}")
-    (output / "README.txt").write_text(
-        f"Angular scans use the {normal} normal, rotating both incident polarization and analyzer.\n"
-        "For normals x/y/z, angle zero and positive 90 degrees are y/z, z/x, x/y respectively.\n"
-        "Intensity = |e_s^dagger R e_i|^2, with the input cutoff/298 K frequency weighting.\n"
-        "No angular normalization or irrep filtering. Radii are in the existing intensity units.\n"
-        "Degenerate modes are exported individually; sum their intensities for an unresolved multiplet.\n"
-        "Scans use the calculated complex mode tensors without symmetry projection.\n"
     )

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from itertools import combinations
 from pathlib import Path
 from string import ascii_lowercase
 import os
+import shutil
 import numpy as np
 import yaml
 
@@ -57,24 +57,23 @@ def read_displacements(path: str | Path = "displacements.dat") -> list[Displacem
     return displacements
 
 
+def read_displacement_metadata(path: str | Path = "displacements.dat") -> tuple[str, str]:
+    fields = dict(item.split("=", 1) for item in Path(path).read_text().splitlines()[0].split()[1:])
+    mode, basis = fields.get("mode"), fields.get("basis")
+    if mode not in {"full", "atoms", "minimal"} or basis not in {"cartesian", "fractional"}:
+        raise ValueError(f"Invalid displacement mode/basis metadata in {path}")
+    return mode, basis
+
+
 def read_displacement_mode(path: str | Path = "displacements.dat") -> str:
-    header = Path(path).read_text().splitlines()[0].lower()
-    if "fractional" in header:
-        return "fractional"
-    if "site-symmetry-minimal" in header:
-        return "minimal"
-    if "symmetry-inequivalent" in header:
-        return "atoms"
-    if header == "displacements for vasp. system":
-        return "full"
-    raise ValueError(f"Cannot determine displacement mode from {path}")
+    return read_displacement_metadata(path)[0]
 
 
 def write_displacements(
     path: str | Path,
     displacements: list[Displacement],
     structure: Structure,
-    header: str = "displacements for VASP. System",
+    header: str = "SpectroPy mode=full basis=cartesian",
 ) -> None:
     labels = atom_labels(structure.atom_symbols)
     unique_atoms = list(dict.fromkeys(displacement.atom_index for displacement in displacements))
@@ -95,17 +94,9 @@ def write_displacements(
 
 
 def _amplitude(input_path: str | Path) -> np.ndarray:
-    """Per-axis Cartesian amplitudes; one input value applies to all three axes."""
+    """Physical lengths along candidate basis axes; one value applies to all."""
     value = read_settings(input_path).displacement_amplitude
     return np.array(value if value is not None else (0.03, 0.03, 0.03))
-
-
-def _cartesian_vectors(amplitude: np.ndarray) -> np.ndarray:
-    vectors = np.zeros((6, 3))
-    for axis in range(3):
-        vectors[2 * axis, axis] = amplitude[axis]
-        vectors[2 * axis + 1, axis] = -amplitude[axis]
-    return vectors
 
 
 def _representatives(path: str | Path) -> list[int]:
@@ -118,7 +109,7 @@ def _representatives(path: str | Path) -> list[int]:
 
 
 # ---------------------------------------------------------------------------
-# Cartesian minimal set ("minimal" mode)
+# Shared basis-aware minimal selection
 # ---------------------------------------------------------------------------
 
 def _frac_to_cart_rotation(rotation: np.ndarray, lattice: np.ndarray) -> np.ndarray:
@@ -130,70 +121,13 @@ def _frac_to_cart_rotation(rotation: np.ndarray, lattice: np.ndarray) -> np.ndar
     return lattice.T @ rotation @ np.linalg.inv(lattice.T)
 
 
-def _get_displacement(rotations, directions, tol: float = 1e-8):
-    """Minimal subset of ``directions`` whose site-symmetry orbits span 3D.
-
-    Tries one direction, then two, then all three (Phonopy's one/two/three
-    reduction). ``rotations`` are Cartesian site-symmetry rotations, so the
-    orbit of a direction is ``{R @ d}``.
-    """
-    for size in (1, 2, 3):
-        for subset in combinations(directions, size):
-            orbit = [rotation @ direction for direction in subset for rotation in rotations]
-            if np.linalg.matrix_rank(np.array(orbit), tol=tol) == 3:
-                return list(subset)
-    return list(directions)
+def _need_minus(direction, rotations, tol=1e-8):
+    return not any(np.allclose(rotation @ direction, -direction, atol=tol, rtol=0)
+                   for rotation in rotations)
 
 
-def _need_minus(direction, rotations, tol: float = 1e-8) -> bool:
-    """Add -d unless -d already lies in the site-symmetry orbit of d.
-
-    Mirrors Phonopy's is_minus_displacement. When the negative is not needed,
-    reconstruct_dielectric_derivatives.synthesize_missing_sign recovers it from
-    the same site symmetry.
-    """
-    return not any(
-        np.allclose(rotation @ direction, -direction, atol=tol) for rotation in rotations
-    )
-
-
-def _minimal_entries(structure: Structure, symmetry_path: str | Path, amplitude: np.ndarray, is_plusminus="auto") -> list[tuple[int, np.ndarray]]:
-    """Cartesian symmetry-minimal displacement set.
-
-    Uses Phonopy's one/two/three reduction and +/- rule, but with the Cartesian
-    axes {x, y, z} as candidates, so every emitted direction is axis-aligned.
-    The rank-3 dielectric derivative transforms covariantly under the site
-    symmetry, so probing along a Cartesian axis is always possible and never
-    needs more displacements than Phonopy's lattice-basis set. Site symmetries
-    are read from the same ``symmetry`` file the reconstruction uses.
-    """
-    lattice = structure.lattice
-    _, _, atom_mapping = read_symmetry_file(symmetry_path)
-    site_symmetries = read_site_symmetries(symmetry_path)
-    representatives = sorted(set(atom_mapping.values()) | set(site_symmetries))
-    directions = np.eye(3)  # Cartesian x, y, z
-    inverse_lattice = np.linalg.inv(lattice)
-
-    vectors: list[tuple[int, np.ndarray]] = []
-    for atom in representatives:
-        fallback = np.eye(3)[None, :, :]
-        fractional_rotations = site_symmetries.get(atom, {}).get("rotations", fallback)
-        rotations = [_frac_to_cart_rotation(rotation, lattice) for rotation in fractional_rotations]
-        for direction in _get_displacement(rotations, directions):
-            vector = direction * amplitude
-            vectors.append((atom, vector))
-            if is_plusminus is True or (is_plusminus == "auto" and _need_minus(direction, rotations)):
-                vectors.append((atom, -vector))
-    return [(atom, vector @ inverse_lattice) for atom, vector in vectors]
-
-
-# ---------------------------------------------------------------------------
-# Fractional-basis minimal set ("fractional" mode) - Phonopy's exact algorithm
-# ---------------------------------------------------------------------------
-
-# Candidate displacement directions in the lattice (fractional) basis, in
-# Phonopy's ``directions_diag`` order.  The one/two/three reduction below tries
-# them in this exact order, so the emitted set matches Phonopy's.
+# Candidate coordinates in the selected basis, in Phonopy's directions_diag
+# order. Both bases share this list and the same tolerant orbit search.
 DIRECTIONS_DIAG = np.array(
     [
         [1, 0, 0],
@@ -227,34 +161,34 @@ def _det(a, b, c):
 
 
 def _rotated(direction, rotations):
-    """All site-symmetry images of a fractional direction (Phonopy convention)."""
+    """All site-symmetry images in the chosen basis."""
     return [direction @ rotation.T for rotation in rotations]
 
 
 def _get_displacement_one(rotations, directions):
-    """One lattice direction whose site-symmetry orbit spans 3D."""
+    """One candidate whose site-symmetry orbit spans 3D."""
     for direction in directions:
         images = _rotated(direction, rotations)
         for i in range(len(rotations)):
             for j in range(i + 1, len(rotations)):
-                if _det(direction, images[i], images[j]) != 0:
+                if abs(_det(direction, images[i], images[j])) > 1e-8:
                     return [direction]
     return None
 
 
 def _get_displacement_two(rotations, directions):
-    """Two lattice directions whose site-symmetry orbit spans 3D."""
+    """Two candidates whose site-symmetry orbits span 3D."""
     for direction in directions:
         images = _rotated(direction, rotations)
         for i in range(len(rotations)):
             for second in directions:
-                if _det(direction, images[i], second) != 0:
+                if abs(_det(direction, images[i], second)) > 1e-8:
                     return [direction, second]
     return None
 
 
-def _get_fractional_displacement(rotations, directions):
-    """Minimal set of lattice directions: one, then two, then three (Phonopy)."""
+def _select_directions(rotations, directions):
+    """Shared one/two/three search; not a global signed-cost optimum."""
     result = _get_displacement_one(rotations, directions)
     if result is not None:
         return result
@@ -264,45 +198,6 @@ def _get_fractional_displacement(rotations, directions):
     return [directions[0], directions[1], directions[2]]
 
 
-def _need_minus_fractional(direction, rotations) -> bool:
-    """Add -d unless a site-symmetry operation maps d onto -d (Phonopy)."""
-    for rotation in rotations:
-        if not (direction @ rotation.T + direction).any():
-            return False
-    return True
-
-
-def _fractional_entries(structure: Structure, symmetry_path: str | Path, amplitude: np.ndarray, is_plusminus="auto") -> list[tuple[int, np.ndarray]]:
-    """Phonopy-equivalent fractional-basis site-symmetry-minimal displacement set.
-
-    Replicates ``phonopy.harmonic.displacement.get_least_displacements`` with
-    ``is_diagonal=True``: for every symmetry-inequivalent atom (an atom that
-    maps onto itself in ``atom_mapping``) the site symmetry expands one, two,
-    or three lattice-vector directions into a set spanning 3D, and each
-    direction is paired with its negative unless the site symmetry already
-    maps the direction onto its negative.  The selected directions are then
-    converted to Cartesian and scaled to a uniform magnitude (Phonopy's single
-    ``distance``; if the per-axis amplitudes differ, the first value is used).
-    """
-    lattice = structure.lattice
-    _, _, atom_mapping = read_symmetry_file(symmetry_path)
-    site_symmetries = read_site_symmetries(symmetry_path)
-    representatives = sorted(atom for atom, mapped in atom_mapping.items() if atom == mapped)
-    distance = float(amplitude[0])  # uniform magnitude (Phonopy convention)
-    inverse_lattice = np.linalg.inv(lattice)
-
-    entries = []
-    for atom in representatives:
-        rotations = np.array(site_symmetries[atom]["rotations"]) if atom in site_symmetries else np.eye(3)[None]
-        for direction in _get_fractional_displacement(rotations, DIRECTIONS_DIAG):
-            vector = direction @ lattice
-            vector = vector / np.linalg.norm(vector) * distance
-            entries.append((atom, vector))
-            if is_plusminus is True or (is_plusminus == "auto" and _need_minus_fractional(direction, rotations)):
-                entries.append((atom, -vector))
-    return [(atom, vector @ inverse_lattice) for atom, vector in entries]
-
-
 # Generate displaced coordinates and make displaced structures
 def generate_displacements(
     mode: str,
@@ -310,25 +205,33 @@ def generate_displacements(
     contcar_path: str | Path,
     symmetry_path: str | Path,
     amplitude: np.ndarray,
+    basis: str = "cartesian",
 ) -> list[Displacement]:
-    if mode == "minimal":
-        entries = _minimal_entries(structure, symmetry_path, amplitude)
-    elif mode == "fractional":
-        entries = _fractional_entries(structure, symmetry_path, amplitude)
-    else:
-        # Determine which set of atoms to generate replacements for
-        if mode == "full":
-            atoms = range(1, structure.natoms + 1)
-        elif mode == "atoms":
-            atoms = _representatives(symmetry_path)
-        else:
-            raise ValueError(f"Unknown displacement mode: {mode}")
-        fractional_vectors = _cartesian_vectors(amplitude) @ np.linalg.inv(structure.lattice)
-        entries = [
-            (atom_index, vector)
-            for atom_index in atoms
-            for vector in fractional_vectors
-        ]
+    if mode not in {"full", "atoms", "minimal"}:
+        raise ValueError("mode must be full, atoms, or minimal")
+    if basis not in {"cartesian", "fractional"}:
+        raise ValueError("basis must be cartesian or fractional")
+    amplitude = np.asarray(amplitude, dtype=float)
+    if not np.isfinite(amplitude).all() or np.any(amplitude <= 0):
+        raise ValueError("Displacement amplitudes must be positive and finite")
+    if mode == "minimal" and not np.allclose(amplitude, amplitude[0]):
+        raise ValueError("minimal requires a common physical displacement length")
+    atoms = range(1, structure.natoms + 1) if mode == "full" else _representatives(symmetry_path)
+    sites = read_site_symmetries(symmetry_path) if mode == "minimal" else {}
+    inverse_lattice = np.linalg.inv(structure.lattice)
+    entries = []
+    for atom in atoms:
+        rotations = np.asarray(sites.get(atom, {}).get("rotations", [np.eye(3)]))
+        if basis == "cartesian":
+            rotations = np.asarray([_frac_to_cart_rotation(r, structure.lattice) for r in rotations])
+        directions = _select_directions(rotations, DIRECTIONS_DIAG) if mode == "minimal" else np.eye(3)
+        for index, direction in enumerate(directions):
+            vector = direction @ structure.lattice if basis == "fractional" else direction
+            length = amplitude[0] if mode == "minimal" else amplitude[index]
+            vector = vector / np.linalg.norm(vector) * length @ inverse_lattice
+            entries.append((atom, vector))
+            if mode != "minimal" or _need_minus(direction, rotations):
+                entries.append((atom, -vector))
 
     counters: dict[int, int] = defaultdict(int)
     displacements = []
@@ -341,14 +244,8 @@ def generate_displacements(
     return displacements
 
 
-def _header(mode: str) -> str:
-    if mode == "minimal":
-        return "displacements for VASP. System (Phonopy site-symmetry-minimal set)"
-    if mode == "fractional":
-        return "displacements for VASP. System (Phonopy fractional-basis minimal set)"
-    if mode == "atoms":
-        return "displacements for VASP. Symmetry-inequivalent atoms"
-    return "displacements for VASP. System"
+def _header(mode: str, basis: str) -> str:
+    return f"SpectroPy mode={mode} basis={basis}"
 
 # Write displacements to files
 def write_atomic_displacements(path: str | Path, displacements: list[Displacement], amplitude: np.ndarray) -> None:
@@ -357,7 +254,7 @@ def write_atomic_displacements(path: str | Path, displacements: list[Displacemen
         output.write(
             "Atomic displacements are "
             + " ".join(f"{value:6.3f}" for value in amplitude)
-            + " Angstrom in Cartesian coordinates along x, y, and z directions\n"
+            + " Angstrom physical lengths; displacement vectors below are fractional\n"
         )
         output.write(f"{len(atoms):6d} number of atoms with displacements, and atom symbols and indices shown below\n")
         for atom_index in atoms:
@@ -389,36 +286,36 @@ def run_displacements(
     contcar_path: str | Path = "CONTCAR",
     symmetry_path: str | Path = "symmetry",
     input_path: str | Path = "input",
+    basis: str = "cartesian",
 ) -> list[Displacement]:
-    if mode not in {"full", "atoms", "minimal", "fractional"}:
-        raise ValueError("mode must be full, atoms, minimal, or fractional")
+    if mode not in {"full", "atoms", "minimal"}:
+        raise ValueError("mode must be full, atoms, or minimal")
     structure = read_structure(contcar_path)
     amplitude = _amplitude(input_path)
-    displacements = generate_displacements(mode, structure, contcar_path, symmetry_path, amplitude)
+    displacements = generate_displacements(mode, structure, contcar_path, symmetry_path, amplitude, basis=basis)
     write_structure("ref_poscar.vasp", structure)
-    write_displacements("displacements.dat", displacements, structure, _header(mode))
-    if mode == "fractional":
+    write_displacements("displacements.dat", displacements, structure, _header(mode, basis))
+    if mode == "minimal":
         bases = build_fractional_bases(read_displacements("displacements.dat"), structure.lattice, read_site_symmetries(symmetry_path))
         write_fractional_bases("fractional_basis.json", bases)
         print("Saved fractional reconstruction bases to fractional_basis.json.")
     write_atomic_displacements("atomic_displacement", displacements, amplitude)
     write_calculation_directories(displacements, structure)
-    if read_settings(input_path).difference_scheme == 'forward':
-        # Include the undisplaced optical reference in the workflow's ra_pos_* loop,
-        # but not in the nonzero displacement records used for differentiation.
-        directory = (Path('displacements') if Path.cwd().name != 'displacements' else Path('.')) / 'ra_pos_equilibrium'
-        directory.mkdir(exist_ok=True)
-        path = directory / 'POSCAR'
-        if path.exists():
-            existing = read_structure(path)
-            delta = existing.fractional_positions - structure.fractional_positions if existing.natoms == structure.natoms else None
-            if (existing.atom_symbols != structure.atom_symbols or
-                not np.allclose(existing.lattice, structure.lattice, atol=1e-10, rtol=0) or
-                delta is None or not np.allclose(delta - np.rint(delta), 0, atol=1e-10, rtol=0)):
-                raise ValueError('Existing equilibrium POSCAR differs from displacement reference; refusing to overwrite')
-        else:
-            write_structure(path, structure)
-        print(f'Generated {directory}/POSCAR (undisplaced optical reference).')
+    # Include the undisplaced optical reference in the workflow's ra_pos_* loop,
+    # but not in the nonzero displacement records used for differentiation.
+    directory = (Path('displacements') if Path.cwd().name != 'displacements' else Path('.')) / 'ra_pos_equilibrium'
+    directory.mkdir(exist_ok=True)
+    path = directory / 'POSCAR'
+    if path.exists():
+        existing = read_structure(path)
+        delta = existing.fractional_positions - structure.fractional_positions if existing.natoms == structure.natoms else None
+        if (existing.atom_symbols != structure.atom_symbols or
+            not np.allclose(existing.lattice, structure.lattice, atol=1e-10, rtol=0) or
+            delta is None or not np.allclose(delta - np.rint(delta), 0, atol=1e-10, rtol=0)):
+            raise ValueError('Existing equilibrium POSCAR differs from displacement reference; refusing to overwrite')
+    else:
+        shutil.copyfile(contcar_path, path)
+    print(f'Generated {directory}/POSCAR (undisplaced optical reference).')
     print(f"Generated {len(displacements)} {mode} displacement(s).")
     print("Wrote reference metadata and displacements/{pos_atom*,ra_pos_atom*/POSCAR}.")
     return displacements

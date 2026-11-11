@@ -15,7 +15,7 @@ def _run_in_directory(workdir: str, operation: Callable[[], None]) -> None:
         os.chdir(previous)
 
 
-def _commands(mode: str) -> dict[str, tuple[str, Callable[[], None]]]:
+def _commands(mode: str, basis: str = "cartesian") -> dict[str, tuple[str, Callable[[], None]]]:
     def stage(module: str, function: str) -> Callable[[], None]:
         def run() -> None:
             getattr(importlib.import_module(module), function)()
@@ -28,13 +28,12 @@ def _commands(mode: str) -> dict[str, tuple[str, Callable[[], None]]]:
         getattr(importlib.import_module("calculate_spectrum"), "run_raman_tensors_for_input")()
 
     def displacements() -> None:
-        getattr(importlib.import_module("spectropy_displacements"), "run_displacements")(mode)
+        getattr(importlib.import_module("spectropy_displacements"), "run_displacements")(mode, basis=basis)
 
     descriptions = {
-        "full": "Generate the full +/- Cartesian displacement set and VASP-ready directories.",
-        "atoms": "Generate all +/- Cartesian displacements for symmetry-inequivalent atoms.",
-        "minimal": "Generate the Cartesian site-symmetry-minimal displacement set.",
-        "fractional": "Generate Phonopy's fractional-basis (lattice-direction) minimal displacement set.",
+        "full": "Generate all +/- basis-axis displacements on every atom.",
+        "atoms": "Generate all +/- basis-axis displacements on atomic representatives.",
+        "minimal": "Generate the site-symmetry-reduced displacement set.",
     }
 
     return {
@@ -85,13 +84,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     add_workdir(displacement_parser)
     displacement_parser.add_argument(
-        "--mode", choices=("full", "atoms", "minimal", "fractional"), default="full",
+        "--mode", choices=("full", "atoms", "minimal"), default="full",
         help=(
-            "full: all atoms and +/- Cartesian axes; atoms: all axes for "
-            "symmetry-inequivalent atoms; minimal: Cartesian site-symmetry-minimal "
-            "set; fractional: Phonopy's lattice-basis (fractional) minimum set."
+            "full: all atoms and +/- basis axes; atoms: all axes for "
+            "symmetry-inequivalent atoms; minimal: site-symmetry-reduced "
+            "set including mixed directions in the selected basis."
         ),
     )
+    displacement_parser.add_argument("--basis", choices=("cartesian", "fractional"), default="cartesian",
+                                     help="Basis for displacement candidates; lengths are always in Angstrom.")
     for name, help_text in (
         ("symmetry", "Write atom-to-atom symmetry-operation matrices."),
         ("derivatives", "Calculate dielectric derivatives."),
@@ -120,24 +121,13 @@ def main(argv: list[str] | None = None) -> int:
     check_parser.add_argument("--plot", action="store_true", help="Also create residual PNG plots; requires Matplotlib.")
     check_parser.add_argument("--style", help="Matplotlib style file for --plot.")
 
-    angular_parser = subparsers.add_parser(
-        "angular", help="Export mode-specific parallel and crossed polarization-angle scans.",
-        description="Generate angular intensity data from mode tensors independently of symmetry checks.",
-    )
-    add_workdir(angular_parser)
-    angular_parser.add_argument("--modes", nargs="+", type=int, required=True, help="1-based mode numbers to scan.")
-    angular_parser.add_argument("--energies", nargs="+", type=float, help="Laser energies in eV (default: input).")
-    angular_parser.add_argument("--output", default="angular", help="Output directory relative to workdir (default: angular).")
-    angular_parser.add_argument("--angle-step", type=float, default=1.0, help="Angular sampling step in degrees (default: 1).")
-    angular_parser.add_argument("--surface-normal", choices=("x", "y", "z"), help="Scan normal (default: input, or z).")
-    angular_parser.add_argument("--plot", action="store_true", help="Also create polar PNG plots; requires Matplotlib.")
-    angular_parser.add_argument("--style", help="Matplotlib style file for --plot.")
-
-    mode_displacements = subparsers.add_parser("mode-displacements", help="Generate collective mode displacements with partner/sign reduction.")
+    mode_displacements = subparsers.add_parser("mode-displacements", help="Generate explicit +/- displacements for every Raman-active mode.")
     add_workdir(mode_displacements)
-    mode_displacements.add_argument("--modes", nargs="+", type=int, help="1-based indices; complete partner groups are reconstructed.")
+    mode_displacements.add_argument("--modes", nargs="+", type=int, help="Explicit 1-based indices overriding activity/cutoff selection; --reduce expands partner groups.")
     mode_displacements.add_argument("--q", type=float, default=.01, help="Normal coordinate in Angstrom sqrt(amu), matching Liangbo's raman_dis_mode.")
-    mode_displacements.add_argument("--no-reduction", action="store_true", help="Explicit original-mode +/- pairs (Fortran comparison path).")
+    reduction = mode_displacements.add_mutually_exclusive_group()
+    reduction.add_argument("--reduce", action="store_true", help="Experimental opt-in: reduce degenerate partners and reuse symmetry-related signs.")
+    reduction.add_argument("--no-reduction", action="store_true", help="Explicit original-mode +/- pairs (the default).")
     mode_displacements.add_argument("--keep-both-signs", action="store_true", help="Reduce partners but compute both signs explicitly.")
     mode_displacements.add_argument("--output", default="mode_displacements")
     mode_displacements.add_argument("--minimum-frequency", type=float, default=1.0, help="Default automatic selection excludes frequencies below this cm^-1.")
@@ -161,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
             module = importlib.import_module("spectropy_modes")
             if args.command == "mode-displacements":
                 module.generate(q=args.q, modes=args.modes,
-                                reduce=not args.no_reduction, reuse_sign=not args.keep_both_signs,
+                                reduce=args.reduce, reuse_sign=not args.keep_both_signs,
                                 output=args.output, minimum_frequency=args.minimum_frequency)
             else:
                 module.reconstruct(args.directory, args.source, args.energies, args.output, denoise=args.denoise)
@@ -172,22 +162,18 @@ def main(argv: list[str] | None = None) -> int:
                 use_saved_basis=args.saved_basis, difference_scheme=args.difference,
                 equilibrium_vasprun=args.equilibrium_vasprun)
         _run_in_directory(args.workdir, derive)
-    elif args.command in ("check", "angular"):
+    elif args.command == "check":
         style = os.path.abspath(args.style) if args.style else None
         def analyze() -> None:
             module = importlib.import_module("spectropy_checks")
             common = dict(energies=args.energies, output=args.output, plot=args.plot, style=style)
-            if args.command == "check":
-                if args.kind == "mode":
-                    module.run_mode_check(subspace_tolerance=args.subspace_tolerance, **common)
-                else:
-                    module.run_check(epsilon_fraction=args.epsilon_fraction, **common)
+            if args.kind == "mode":
+                module.run_mode_check(subspace_tolerance=args.subspace_tolerance, **common)
             else:
-                module.run_angular(args.modes, angle_step=args.angle_step,
-                                   surface_normal=args.surface_normal, **common)
+                module.run_check(epsilon_fraction=args.epsilon_fraction, **common)
         _run_in_directory(args.workdir, analyze)
     else:
-        commands = _commands(getattr(args, "mode", "full"))
+        commands = _commands(getattr(args, "mode", "full"), getattr(args, "basis", "cartesian"))
         _run_in_directory(args.workdir, commands[args.command][1])
     return 0
 

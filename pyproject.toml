@@ -26,13 +26,11 @@ classifiers = [
 [project.optional-dependencies]
 plot = ["matplotlib>=3.5"]
 phonopy = ["phonopy>=2.0"]
-symbolic = ["sympy>=1.12", "spglib>=2.0"]
-all = ["matplotlib>=3.5", "phonopy>=2.0", "sympy>=1.12", "spglib>=2.0"]
+all = ["matplotlib>=3.5", "phonopy>=2.0", "spglib>=2.0"]
 dev = ["pytest>=7"]
 
 [project.scripts]
 spectropy = "spectropy_cli:main"
-spectropy-symbolic = "spectropy_symbolic:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -46,11 +44,11 @@ py-modules = [
     "spectropy_checks",
     "spectropy_config",
     "spectropy_derivatives",
+    "spectropy_directional",
     "spectropy_displacements",
     "spectropy_phonons",
     "spectropy_paths",
     "spectropy_structure",
     "spectropy_modes",
-    "spectropy_symbolic",
     "visualize_modes",
 ]

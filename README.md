@@ -12,7 +12,7 @@ phonon eigenvectors to produce Raman tensors, intensities, and broadened plots.
 ## Features
 
 - Generates finite-displacement `POSCAR` files from a relaxed `CONTCAR`.
-- Optionally uses Phonopy to generate a symmetry-reduced displacement set.
+- Uses Phonopy symmetry data for a shared Cartesian/fractional displacement selector.
 - Prepares one calculation directory per displacement without prescribing a
   VASP execution method.
 - Collects VASP `vasprun.xml` outputs and calculates complex,
@@ -22,11 +22,13 @@ phonon eigenvectors to produce Raman tensors, intensities, and broadened plots.
 - Builds per-mode Raman tensors and intensities for specified and
   orientation-averaged experimental geometries.
 - Produces Lorentzian- or Gaussian-broadened Raman plots.
-- Checks mode symmetry consistency and exports polarization-angle scans.
+- Checks mode symmetry consistency.
 - Generates VMD or VESTA phonon-mode visualizations.
-- Preserves raw derivatives and spectra alongside optional site-denoised outputs.
-- Provides experimental collective-mode displacements with degeneracy/sign
-  reduction and joint mode-covariance denoising.
+- Preserves measured-direction raw derivatives and raw spectra alongside optional
+  symmetry-denoised outputs.
+- Enumerates collective +/- displacements for every Raman-active mode,
+  including each degenerate partner, with experimental opt-in reduction
+  and joint mode-covariance denoising.
 
 ## Installation
 
@@ -59,13 +61,28 @@ uses `0.00 eV`, the static-limit calculation.
 1.0 0.0 0.0
 z
 laser_energies: 0.00 1.96 2.33
+displacement_amplitude: 0.01
+difference_scheme: central
+dielectric_source: vasprun.xml
+site_symmetry_projection: false
 cutoff: 1.0
-broadening_fwhm: 1.0
+broadening_hwhm: 1.0
 broadening_type: lorentzian
 ```
 
-`broadening_fwhm` is in cm⁻¹ and defaults to `1.0`; `broadening_type`
+`displacement_amplitude` is a physical length in Angstrom, independent of the
+candidate basis; its default is `0.03`. One value applies to all directions.
+`full` and `atoms` also accept three lengths, one per selected basis axis;
+`minimal` requires a common length. `difference_scheme` defaults to `central`
+and also accepts `forward`. Denoising is opt-in via
+`site_symmetry_projection: true`; it never replaces the saved raw observations.
+Mode and basis are command-line options, not keys in this `input` file.
+
+`broadening_hwhm` is in cm⁻¹ and defaults to `1.0` (FWHM = 2.0); `broadening_type`
 defaults to `lorentzian` and may instead be `gaussian`.
+Legacy `broadening_fwhm` inputs retain their full widths through conversion;
+specifying both width keys is an error. New settings use `broadening_hwhm`.
+Internal line-shape helpers still take full widths.
 
 `cutoff` is optional and expressed in cm⁻¹. When it is set, modes at or above
 the cutoff receive the 298 K Bose/`1/ω` cross-section factor. When omitted,
@@ -87,14 +104,18 @@ spectropy displacements --mode minimal --workdir /path/to/calculation
 | --- | --- |
 | `spectropy displacements --mode full` | Create the full `+/-x`, `+/-y`, `+/-z` set for every atom and VASP-ready directories. |
 | `spectropy displacements --mode atoms` | Create the full `+/-x`, `+/-y`, `+/-z` set for symmetry-inequivalent atoms only. |
-| `spectropy displacements --mode minimal` | Create Phonopy's minimum symmetry-reduced displacement set. |
-| `spectropy displacements --mode fractional` | Use a local implementation of Phonopy's fractional direction selection and save its reconstruction basis; derivatives are converted to Cartesian before mode contraction. |
+| `spectropy mode-displacements --q 0.01` | Create independent +/-Q patterns for every Raman-active Gamma mode; see [collective-mode workflow](#experimental-collective-mode-workflow). |
+| `spectropy mode-tensors --denoise` | Extract collective-mode tensors and additionally save mode-covariance-denoised tensors. |
+| `spectropy displacements --mode minimal` | Reduce atoms and directions with site symmetry, using Cartesian candidates by default. |
+| `spectropy displacements --mode minimal --basis fractional` | Use the same selector with fractional candidates; final reconstructed derivatives are Cartesian. |
 | `spectropy symmetry` | Write the symmetry-operation matrices relating equivalent atoms. |
 | `spectropy derivatives` | Evaluate dielectric derivatives at every laser energy in `input`. |
 | `spectropy spectrum` | Combine `band.yaml` and derivatives into Raman tensors and intensities. |
 | `spectropy plot` | Interactively broaden and plot generated Raman intensities. |
 | `spectropy check` | Export absolute, squared, and relative symmetry-projection residuals for all modes. |
-| `spectropy angular --modes 110` | Export parallel and crossed polarization-angle scans for selected modes. |
+
+Symbolic tensor-form generation and polarization-angle scans are not provided.
+Fixed-polarization spectra and numerical symmetry checks remain available.
 
 The CLI uses the same input/output conventions as the Python API. The optional
 phonon-mode visualization helper remains available directly:
@@ -133,13 +154,15 @@ dielectric_source: vasprun.xml
 ```
 
 For forward differences, use `difference_scheme: forward` before generating
-displacements. SpectroPy also creates `displacements/ra_pos_equilibrium/POSCAR`, containing
+displacements. For both central and forward differences, SpectroPy creates
+`displacements/ra_pos_equilibrium/POSCAR`, copied from the original undisplaced
+structure input, containing
 the undisplaced reference. The workflow runs it alongside the `ra_pos_*`
 displacement directories with the same optical inputs. Derivative processing
 automatically reads `displacements/ra_pos_equilibrium/vasprun.xml`; no equilibrium path
 setting is needed. The reference is not a zero-length displacement in
-`displacements.dat`. Central differences remain the default and do not
-generate this extra directory. `--difference` overrides the input scheme;
+`displacements.dat`. Central differences remain the default and ignore the
+equilibrium response during differentiation. `--difference` overrides the input scheme;
 `--equilibrium-file` (`--equilibrium-vasprun` is a compatibility alias) remains an optional override for existing external
 reference calculations.
 
@@ -158,9 +181,20 @@ spectropy displacements --mode full
 # Requires Phonopy's `symmetry` file.
 spectropy displacements --mode atoms
 
-# Symmetry-reduced set (requires Phonopy).
+# Symmetry-reduced set (requires Phonopy symmetry data).
 spectropy displacements --mode minimal
 ```
+
+Choose `--mode full|atoms|minimal` independently of
+`--basis cartesian|fractional`. `full` measures all atoms along three basis
+axes; `atoms` retains atomic representatives; `minimal` also reduces directions
+using site symmetry. Both bases use the same ordered axis/mixed-vector
+candidates, orbit search, and sign test. This is a seed-count search, not a
+guarantee of globally optimal conditioning or minimum signed calculation cost.
+The former `--mode fractional` is removed: use `--mode minimal --basis fractional`.
+Metadata records both choices; stored structure-displacement vectors remain
+fractional in either case. All six combinations reconstruct Cartesian
+derivatives, but counts and finite-step numerical errors can differ by basis.
 
 Every mode writes `ref_poscar.vasp`, `displacements.dat`, and the
 pipeline-compatible `atomic_displacement`, then creates `displacements/pos_atom*` and
@@ -169,7 +203,7 @@ files; add the inputs required by your own DFT code to each directory. The
 `atoms` mode requires Phonopy's YAML `symmetry` file and reconstructs the
 remaining atoms during the derivative stage.
 
-Fractional mode also writes `fractional_basis.json`. It stores each
+Minimal mode in either basis also writes `fractional_basis.json`. It stores each
 representative atom's three-vector reconstruction basis, its inverse, and
 the symmetry transformations that supply its directional responses. The
 derivative stage reconstructs the basis explicitly by default. Use
@@ -179,7 +213,8 @@ rotations; a stale file is rejected. Datasets without this file remain supported
 
 ### 3. Run DFT calculations
 
-Run your DFT code in every `displacements/ra_pos_atom*` directory. SpectroPy does not
+Run your DFT code in every `displacements/ra_pos_atom*` directory and in
+`displacements/ra_pos_equilibrium`. SpectroPy does not
 choose your functional, k-point mesh, dielectric settings, executable, or job
 submission strategy. For the VASP frequency-dependent workflow, each completed
 directory must contain `vasprun.xml` with dielectric-function data at the
@@ -204,13 +239,32 @@ The command writes:
 - `dielectric_tensor_<frequency>`: dielectric tensor for every displacement.
 - `epsilon_derivative_<frequency>`: complex dielectric-tensor derivatives
   for all atoms, including symmetry-reconstructed data where applicable.
-- `raw_epsilon_derivative_<frequency>`: always saved before site averaging.
+- `raw_directional_derivative_<frequency>.json`: measured directional finite
+  differences before basis reconstruction or denoising. Each record includes
+  the Cartesian unit displacement vector, real/imaginary 3x3 response in
+  volume-scaled Å² units, step length, and whether the negative sign was
+  supplied by site symmetry. One central pair is one response, not two.
 
 Set `site_symmetry_projection: true` in `input` to also write
-`corrected_epsilon_derivative_<frequency>` and per-atom residual CSV files.
-The unprefixed file then selects the corrected field. Raw means before site
-averaging, not before symmetry reconstruction. See [site projection](docs/site_projection.md)
-for supported displacement modes, conventions, and limitations.
+`corrected_epsilon_derivative_<frequency>` and measured-direction residual CSV
+files, plus `directional_residual_summary_<frequency>.json`.
+Residuals compare each raw response with the corrected Cartesian tensor
+contracted onto that same unit displacement direction. Unmeasured directions
+and equivalent atoms are excluded. The unprefixed file selects the corrected
+Cartesian field for spectra. New runs do not write raw Cartesian derivative
+files; raw spectra reconstruct their input internally from the directional
+file. Existing historical files are not deleted.
+
+For `atoms` and `minimal`, denoising fits the measured directional responses
+to the representative atom's site-allowed, reciprocal tensor subspace before
+transfer to equivalent atoms. Unmeasured directions are not independent
+observations. For `full`, the reconstructed Cartesian field is averaged over
+the complete space group, including equivalent-atom relationships. This uses
+an equal-weight Cartesian tensor norm; it is not an observation-space fit for
+nonorthogonal fractional directions. Reciprocity uses a transpose, not a
+conjugate transpose, and is intended for reciprocal response, not general
+magneto-optical tensors. No acoustic sum rule is imposed. Symmetry-allowed
+numerical errors remain undetected.
 
 When `laser_energies` is absent, SpectroPy evaluates the default `0.00 eV`
 case. This replaces the separate static-derivative workflow.
@@ -255,7 +309,7 @@ To predefine the geometry and laser energies, create `input` as follows:
 0.0 1.0 0.0   ! scattered-light polarization
 z             ! surface-normal direction
 laser_energies: 0.00 1.96 2.33 ! eV; 0.00 is the static-limit calculation
-broadening_fwhm: 1.0 ! cm-1
+broadening_hwhm: 1.0 ! cm-1
 broadening_type: lorentzian
 ```
 
@@ -265,7 +319,7 @@ broadening_type: lorentzian
 spectropy plot
 ```
 
-The plotter reads `broadening_fwhm` (default `1.0 cm⁻¹`) and
+The plotter reads `broadening_hwhm` (default `1.0 cm⁻¹`) and
 `broadening_type` (`lorentzian` by default, or `gaussian`) from `input`. It
 scans the current directory tree for Raman intensity files and writes
 publication-style PNG plots alongside them. It also writes unnormalized,
@@ -274,34 +328,25 @@ two-column numerical spectra named
 file convention. If LaTeX is installed it is used for rendering; otherwise
 Matplotlib's standard fonts are used.
 
-## Symmetry checks and polarization-angle scans
+## Symmetry checks
 
 Run after dielectric derivatives are available. `check` reads `band.yaml`,
 `symmetry`, `ref_poscar.vasp` (or `CONTCAR`), `input`, and
 `epsilon_derivative_<energy>`; `irreps.yaml` supplies optional mode labels.
 No DFT rerun or prior `spectropy spectrum` command is required.
-`angular` only requires `band.yaml`, `input`, and the derivative files.
 
 ```bash
 spectropy check
 spectropy check --plot --style /path/to/raman.mplstyle
 spectropy check --kind mode --plot --output mode_check
-spectropy angular --modes 110 --plot
-spectropy angular --modes 110 111 --energies 0.00 1.96 --angle-step 0.5
-spectropy angular --modes 110 --plot --style /path/to/raman.mplstyle -C /path/to/raman
 spectropy check --help
-spectropy angular --help
 ```
 
-`check` outputs go to `check/`, and `angular` outputs go to `angular/`
-(`--output` changes either destination). The commands run independently:
+`check` outputs go to `check/` (`--output` changes the destination):
 
 - `symmetry_residuals_<energy>eV.csv`: all mode indices, frequencies, irreps,
   absolute and squared Frobenius residuals, relative residuals, both tensor
   norms, and the regularizer.
-- `angular_intensity_mode<mode>_<energy>eV.csv`: angle in degrees and the
-  calculated parallel and crossed intensities. Mode numbers are
-  1-based. Only `spectropy angular` accepts `--modes`.
 - `README.txt`: conventions and interpretation. `--plot` also produces PNG
   figures and requires the optional plotting dependencies.
 
@@ -347,28 +392,11 @@ Multiplet squared norms sum over all partners and are basis-independent;
 individual partner residuals depend on the phonon eigenvector basis.
 This checks covariance, not total accuracy, and does not change any tensors.
 
-The workspace comparison script `raman_workflow/post/analysis/plot_mode_covariance_residuals.py`
-runs this check for the five BN 9x9 fractional displacement sizes and three
-laser energies, writing new tables and comparison grids under
-`post/graphs/mode_covariance/`. It reuses representation matrices only after
-verifying identical phonon, irrep, symmetry, and reference-structure files.
-Existing spectrum/angular commands do not perform this atom alignment;
-results from mismatched atom ordering require separate review.
-
-For a `z` surface normal, parallel scans use
-`e_incident = e_scattered = (cos(theta), sin(theta), 0)`; crossed scans use
-`e_scattered = (-sin(theta), cos(theta), 0)`. The normal defaults to `input`
-or `z` and can be set with `--surface-normal`. Scans retain the existing
-cutoff/298 K frequency weighting, with no per-curve normalization or symmetry
-filtering. For an unresolved degenerate multiplet, sum the exported mode
-intensities, not the tensors or amplitudes.
-
 The Python API is available from `spectropy_checks`: `symmetry_operations`,
 `project_derivatives`, `mode_tensors`, `projection_residuals`,
-`angular_intensities`, `run_check`, and `run_angular`. Derivatives use shape
+and `run_check`. Derivatives use shape
 `(natoms, displacement_axis, dielectric_row, dielectric_column)`;
-mode tensors use `(nmodes, 3, 3)`. `angular_intensities` returns
-`(nmodes, nangles)` reduced intensities before frequency weighting.
+mode tensors use `(nmodes, 3, 3)`.
 
 ## Phonon-mode visualization
 
@@ -390,12 +418,13 @@ source VMD_MODES/mode_001.vmd
 ## Future work
 
 The current `epsilon_derivative_<energy>` files apply the
-`V_prim / (4*pi)` dielectric-to-polarizability conversion to each atomic
-derivative before writing it to disk, where it is rounded and later reread for
-the mode contraction. This follows the legacy Liangbo file convention, but it
+`V_cell / (4*pi)` dielectric-to-polarizability conversion to each atomic
+derivative before writing it to disk. Cartesian exports use 16 digits after
+the decimal in scientific notation, and measured-direction JSON retains
+floating-point values. This follows the legacy Liangbo file convention, but it
 is not the preferred internal design. A future refactor should retain raw
 dielectric derivatives at full precision through the phonon-mode contraction,
-then apply `V_prim / (4*pi)` once to the resulting mode Raman tensor. The
+then apply `V_cell / (4*pi)` once to the resulting mode Raman tensor. The
 on-disk format and compatibility plan must be updated deliberately when this
 changes.
 
@@ -422,10 +451,11 @@ If you use SpectroPy in your research, please cite:
 
 ## Experimental collective-mode workflow
 
-Experimental VASP collective-mode displacements, partner/sign reduction and
-optional joint mode-covariance denoising are described in
-[mode displacement documentation](docs/mode_displacements.md). This feature
-preserves raw tensors separately from projected tensors.
+This alternative to atomic displacements starts with `CONTCAR` (or
+`ref_poscar.vasp`), Gamma-point `band.yaml`, `irreps.yaml`, and Phonopy's YAML
+`symmetry` file. Symmetry selects Raman-active modes across all polarizations,
+not just modes visible in the chosen experimental geometry. Each degenerate
+partner receives its own explicit positive and negative displacement by default.
 
 ```bash
 spectropy mode-displacements --q 0.01
@@ -435,20 +465,32 @@ spectropy mode-tensors --denoise
 
 See [the mode example](examples/MoS2_Mode_Displacements/README.md). The normal
 coordinate is in Angstrom sqrt(amu), not a maximum atomic displacement.
-Reduced seeds may be combinations of degenerate modes; the manifest is
-authoritative. This experimental route does not launch DFT calculations.
+The atomic displacement is `Q * e_k(mu) / sqrt(m_mu)`, using mass-weighted
+normalized eigenvectors. Automatic selection excludes frequencies at or below
+`--minimum-frequency` (default `1.0 cm^-1`). `--modes 4 5` explicitly selects
+1-based mode indices and overrides automatic activity and frequency filtering.
+Only with `--reduce` may seeds be combinations of degenerate modes; the manifest is
+authoritative. Reduction remains experimental and is not enabled by default.
 
-## Development and testing
+`mode_displacements/` contains a `mode_manifest.json`, a Fortran-style
+`mode_index`, interchange `POSCAR_mode*` files, and `ra_POSCAR_mode*/POSCAR`
+calculation directories. `runRA` stages available DFT input files; it does not
+launch VASP. Run the optical calculations externally without relaxing the
+displaced structures. `mode-tensors` validates their geometries against the
+manifest and currently requires central differences and `polarization: specific`.
+It writes to a fresh `mode_results/` directory by default; raw tensors remain
+in `raw_mode_tensors_<energy>eV.npz`, with corrected tensors additionally saved
+when `--denoise` is enabled. Unreduced extraction uses only each directly
+calculated pair, without symmetry averaging of raw data.
 
-```bash
-python -m pip install -e '.[all,dev]'
-python -m pytest -q
-```
+## Validation
 
-Regression tests cover nine-component XML parsing, finite differences,
-symmetry projection, raw/corrected output separation, and collective-mode
-reconstruction with synthetic dielectric responses. These tests do not replace
-DFT convergence studies or establish agreement between different functionals.
+Development regression checks cover nine-component XML parsing, finite
+differences, symmetry projection, raw/corrected output separation, and
+collective-mode reconstruction with synthetic dielectric responses. The local
+test suite is maintained separately from the published main branch. These checks
+do not replace DFT convergence studies or establish agreement between different
+functionals.
 See [the change notes](CHANGELOG.md) for compatibility changes.
 
 ## License
