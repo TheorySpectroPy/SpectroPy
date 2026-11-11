@@ -44,6 +44,7 @@ py-modules = [
     "spectropy_symmetry",
     "spectropy_config",
     "spectropy_derivatives",
+    "spectropy_tensors",
     "spectropy_directional",
     "spectropy_displacements",
     "spectropy_phonons",

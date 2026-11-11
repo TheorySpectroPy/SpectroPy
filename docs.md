@@ -4,43 +4,40 @@ See the [basic workflow](README.md#workflow--usage-guide) for a short introducti
 
 ## Input Settings
 
-Settings are a YAML mapping in `input.yaml`; their order does not matter.
+Settings are grouped YAML mappings in `input.yaml`; their order does not matter.
+The table uses dotted paths (for example, `symmetry.denoise` means `denoise`
+inside `symmetry`), not literal dotted YAML keys. See the basic example.
 Use lists for vectors and multiple values, `true`/`false` for booleans, and
 `#` for comments. Duplicate and unknown keys are rejected.
-`symmetry: on` and `symmetry: off` are string choices, not booleans; quotes are
+`symmetry.reduction: on` and `symmetry.reduction: off` are string choices, not booleans; quotes are
 optional in SpectroPy. The loader uses only `true` and `false` as boolean words.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `incident_polarization` | Required for spectra | Three Cartesian components of the incoming polarization vector. |
-| `scattered_polarization` | Required for spectra | Three Cartesian components of the detected polarization vector. |
-| `surface_normal` | Required for spectra | Surface-normal axis: `x`, `y`, or `z`. |
-| `laser_energies` | `0.00` | One or more photon energies in eV; zero is the static limit. |
-| `symmetry` | `off` | `on` (minimal), `off` (full), or `atoms` (atoms only); see the selection table below. |
-| `displacement_basis` | `cartesian` | `cartesian` or `fractional` candidate directions. |
-| `displacement_amplitude` | `0.03` | Physical displacement length in Å, in either basis. |
-| `difference_scheme` | `central` | `central` or `forward` derivative analysis. Only `forward` generates an equilibrium calculation directory; the signed displacement set is unchanged. |
-| `dielectric_source` | `vasprun.xml` | Only supported dielectric source. |
-| `site_symmetry_projection` | `false` | `true` enables atomic symmetry and reciprocity denoising. |
-| `polarization` | `specific` | `specific` or `average`; the latter sums polarization channels, not a general powder orientational integral. |
-| `cutoff` | Unset | When set, apply the 298 K Bose/phonon-frequency factor to modes at or above this threshold (cm⁻¹). Otherwise use reduced intensities. |
-| `broadening_hwhm` | `1.0` | Half-width at half-maximum in cm⁻¹; FWHM is twice this value. |
-| `broadening_type` | `lorentzian` | `lorentzian` or `gaussian` (also `l` or `g`). |
-| `equilibrium_file` | Automatic | Optional equilibrium XML path for forward differences; otherwise `displacements/ra_pos_equilibrium/vasprun.xml`. |
-| `saved_basis` | `false` | For `on`, generate `fractional_basis.json` and reuse it after validation; otherwise reconstruct without a cache. |
+| `polarization.incident` | Required for spectra | Three Cartesian components of the incoming polarization vector. |
+| `polarization.scattered` | Required for spectra | Three Cartesian components of the detected polarization vector. |
+| `polarization.surface_normal` | Required for spectra | Surface-normal axis: `x`, `y`, or `z`. |
+| `spectrum.energies` | `0.00` | One or more photon energies in eV; zero is the static limit. |
+| `symmetry.reduction` | `off` | `on` (minimal), `off` (full), or `atoms` (atoms only); see the selection table below. |
+| `displacements.basis` | `cartesian` | `cartesian` or `fractional` candidate directions. |
+| `displacements.amplitude` | `0.03` | Physical displacement length in Å, in either basis. |
+| `displacements.difference` | `central` | `central` or `forward` derivative analysis. Only `forward` generates an equilibrium calculation directory; the signed displacement set is unchanged. |
+| `symmetry.denoise` | `false` | `true` enables atomic symmetry and reciprocity denoising. |
+| `polarization.mode` | `specific` | `specific` or `average`; the latter sums polarization channels, not a general powder orientational integral. |
+| `spectrum.cutoff` | Unset | When set, apply the 298 K Bose/phonon-frequency factor to modes at or above this threshold (cm⁻¹). Otherwise use reduced intensities. |
+| `broadening.hwhm` | `1.0` | Half-width at half-maximum in cm⁻¹; FWHM is twice this value. |
+| `broadening.type` | `lorentzian` | `lorentzian` or `gaussian` (also `l` or `g`). |
+| `displacements.equilibrium_file` | Automatic | Optional equilibrium XML path for forward differences; otherwise `displacements/ra_pos_equilibrium/vasprun.xml`. |
+| `symmetry.saved_basis` | `false` | For `on`, generate `fractional_basis.json` and reuse it after validation; otherwise reconstruct without a cache. |
 
 `off` and `atoms` accept a list of three displacement lengths, one per selected
-basis axis, e.g. `displacement_amplitude: [0.01, 0.02, 0.03]`; `on` requires
-a common length. Accepted aliases are `laser_energy` and `frequency_cutoff`.
-Legacy `broadening_fwhm` is converted to HWHM; do not specify both width keys.
+basis axis, e.g. `displacements.amplitude: [0.01, 0.02, 0.03]`; `on` requires
+a common length.
 
-The former text file named `input` is no longer read automatically. To migrate,
-create `input.yaml` using named entries, replace space-separated vectors with
-YAML lists, and replace `!` comments with `#`. Renaming alone is insufficient.
-Replace `displacement_mode: minimal/full/atoms` with `symmetry: on/off/atoms`,
-respectively. The CLI override is now `--symmetry`, not `--mode`.
-If only the old file is present, SpectroPy reports the required conversion
-instead of silently using defaults. Existing calculation files are not modified.
+The former positional `input` file and flat `input.yaml` settings are no longer
+accepted. Rewrite them using the grouped schema; renaming alone is insufficient.
+No scientific inputs or completed calculations are migrated automatically.
+The dielectric source is always `vasprun.xml`; there is no source-selection knob.
 
 Paths are relative to the working directory. Changing `input.yaml` does not modify
 existing structures or results: regenerate displacements in a fresh directory
@@ -51,20 +48,20 @@ recorded displacement metadata, not a newly edited selection setting.
 
 | File | Purpose |
 | --- | --- |
-| `fractional_basis.json` | Optional JSON reconstruction cache, generated and used only when both `saved_basis: true` and `symmetry: on` are set. |
+| `fractional_basis.json` | Optional JSON reconstruction cache, generated and used only when both `symmetry.saved_basis: true` and `symmetry.reduction: on` are set. |
 | `atomic_displacement` | Fortran-format export of the displacement list; generated, but not read by SpectroPy. |
 | `displacements/pos_atom*` | Standalone POSCAR exports duplicating the calculation-directory structures; not read by SpectroPy. |
 
 Only `displacements.dat` and the per-calculation `POSCAR` files are essential
 generated inputs. Keep the original `CONTCAR` and symmetry/phonon inputs too.
-Atom registration prefers `ref_poscar.vasp` but can fall back to `CONTCAR`.
+The tensor stage registers phonon atoms against the reconstruction's `CONTCAR`.
 `irreps.yaml` supplies labels and can be omitted for atomic-tensor calculations.
 
-For forward differences, set `difference_scheme: forward` before generating
+For forward differences, set `displacements.difference: forward` before generating
 displacements. This also creates `displacements/ra_pos_equilibrium/POSCAR`,
 copied from the reference structure, with the same input symlinks. Run VASP
 there with matching optical settings; analysis automatically reads its
-`vasprun.xml`, or an existing response specified by `equilibrium_file`.
+`vasprun.xml`, or an existing response specified by `displacements.equilibrium_file`.
 Central differences do not create or update this directory. Existing
 equilibrium calculations are left untouched, not deleted.
 
@@ -72,20 +69,50 @@ Input symlinks are created for supplied files. Missing inputs produce a warning;
 matching links are retained, and conflicting files or links are never overwritten.
 Supply any missing inputs before running VASP.
 
-Disabling `site_symmetry_projection` selects the raw result for the unprefixed
-outputs. Existing corrected files are not deleted; only the active selection
-changes when the analysis is rerun.
+## Optional Per-atom and Debug Outputs
+
+By default, `spectropy tensors` writes only `Raman_tensor_<E>eV` analysis results.
+Atomic reconstruction, optional denoising, and phonon contraction happen in memory.
+The existing XML collection cache in `displacements/vasprun/` is still used.
+
+To inspect the final per-atom derivatives, enable:
+
+```yaml
+output:
+  per_atom:
+    enabled: true
+    raw_directional_derivatives: false
+```
+
+| Setting | Default | Additional output |
+| --- | --- | --- |
+| `output.per_atom.enabled` | `false` | `epsilon_derivative_<E>`: final real/imaginary Cartesian slices for every atom. |
+| `output.per_atom.raw_directional_derivatives` | `false` | `raw_directional_derivative_<E>.json`: measured directional responses for debugging. Requires `enabled: true`. |
+
+The final per-atom file is denoised when `symmetry.denoise: true`; otherwise it
+contains the unprojected reconstructed field. There is no duplicate
+`corrected_epsilon_derivative` file. The debug JSON preserves measured
+directions, steps, sign provenance, and complex raw responses; it does not
+pretend a mixed displacement is a directly measured Cartesian slice.
+
+`spectropy spectrum` reads only the final mode tensor files, so per-atom/debug
+exports are never required. Changing denoising or energy settings requires rerunning
+`spectropy tensors`; changing polarization requires only `spectrum` and `plot`.
+Old raw/corrected exports are left untouched and are not selected automatically.
+Tensor files retain full numerical precision between the two stages; no duplicate
+unqualified `Raman_tensor` alias or raw/corrected spectrum copies are produced.
 
 ## Automating Energy Scans
 
 Request multiple energies in `input.yaml`, then run the analysis once:
 
 ```yaml
-laser_energies: [0.00, 0.10, 0.20, 0.30, 1.50, 1.96, 2.33]
+spectrum:
+  energies: [0.00, 0.10, 0.20, 0.30, 1.50, 1.96, 2.33]
 ```
 
 ```bash
-spectropy derivatives
+spectropy tensors
 spectropy spectrum
 spectropy plot
 ```
@@ -95,14 +122,14 @@ two decimal places; choose energies that remain distinct at that precision.
 
 ## Displacement Selection and Derivatives
 
-| `symmetry` | Atoms | Directions |
+| `symmetry.reduction` | Atoms | Directions |
 | --- | --- | --- |
 | `off` | Every atom | Three selected-basis axes. |
 | `atoms` | One representative per atomic orbit | Three selected-basis axes. |
 | `on` | One representative per atomic orbit | Site-symmetry-reduced axis or mixed directions. |
 
-`symmetry` controls displacement selection, independently of denoising:
-`symmetry: off` still allows `site_symmetry_projection: true` when comparing
+`symmetry.reduction` controls displacement selection, independently of denoising:
+`symmetry.reduction: off` still allows `symmetry.denoise: true` when comparing
 the full set against a symmetry-denoised result. The existing algorithm names
 in `displacements.dat` metadata are retained so completed datasets remain readable.
 
@@ -110,7 +137,7 @@ All three support Cartesian or fractional candidates. SpectroPy generates
 displacements itself; Phonopy supplies symmetry information, not the
 displacement list. Both bases use the same ordered candidate/orbit search.
 Counts and finite-step errors can differ; the search does not guarantee
-globally optimal conditioning. With `saved_basis: true`, `symmetry: on` records
+globally optimal conditioning. With `symmetry.saved_basis: true`, `symmetry.reduction: on` records
 its basis and transformations in `fractional_basis.json` for either candidate
 basis. By default this file is neither generated nor read. Existing cache files
 are left untouched when the setting is disabled.
@@ -132,9 +159,9 @@ $$
 $$
 
 All dielectric matrix components are Cartesian, even when the displacement
-direction was selected in a fractional basis. Raw JSON records preserve these
+direction was selected in a fractional basis. Optional debug JSON records preserve these
 directional responses, not a manually selected subset of Cartesian slices.
-With `symmetry: on`, symmetry may supply the negative sign; the JSON records this.
+With `symmetry.reduction: on`, symmetry may supply the negative sign; the JSON records this.
 
 ## Symmetry Denoising and Raman Tensors
 
@@ -150,7 +177,7 @@ Reciprocity means $\partial\epsilon_{\alpha\beta}/\partial r_i
 do not impose it on general magneto-optical responses. No acoustic sum rule
 is imposed, and symmetry-allowed numerical errors can remain.
 
-Following the legacy derivative-file convention, stored atomic responses
+Following the legacy derivative-file convention, optional stored atomic responses
 include $V_{\rm cell}/(4\pi)$ and have units of Å². The mode contraction is
 
 $$
@@ -164,26 +191,28 @@ I_k^{\rm reduced}=
 \left|\mathbf g_s^{\mathsf T}R(k)\mathbf g_i\right|^2.
 $$
 
-The volume factor is already stored and must not be applied twice. The
+The volume factor is applied once during in-memory mode contraction. It is also
+included in optional atomic exports and must not be applied again when importing them. The
 eigenvectors are mass-weighted and normalized. These are Placzek-response
 derivatives, not a full resonant scattering calculation.
 
 ## Collective Mode Displacements
 
 As an alternative to atomic displacements, use `CONTCAR`, Gamma-point
-`band.yaml`, `irreps.yaml`, and `symmetry` to select Raman-active modes:
+`band.yaml`, `irreps.yaml`, and the `symmetry` file to select Raman-active modes:
 
 Add these settings to the same `input.yaml` file:
 
 ```yaml
-mode_q: 0.01 # normal-coordinate amplitude, Angstrom sqrt(amu)
-mode_indices: auto # select Raman-active modes automatically
-mode_minimum_frequency: 1.0 # exclude modes at or below this cm^-1
-mode_displacements_directory: mode_displacements
-mode_results_directory: mode_results
+modes:
+  q: 0.01 # normal-coordinate amplitude, Angstrom sqrt(amu)
+  indices: auto # select Raman-active modes automatically
+  minimum_frequency: 1.0 # exclude modes at or below this cm^-1
+  displacements_directory: mode_displacements
+  results_directory: mode_results
 ```
 
-These are the defaults. Set `mode_indices: [6, 7]`, for example, to select specific
+These are the defaults. Set `modes.indices: [6, 7]`, for example, to select specific
 1-based mode indices instead of applying the activity and frequency filters.
 The directory settings control both generation and subsequent tensor extraction.
 
@@ -195,7 +224,7 @@ spectropy mode-tensors
 
 Each mode, including each degenerate partner, receives its own explicit
 positive and negative displacement. Automatic selection includes Raman-active
-modes across polarizations with frequencies above `mode_minimum_frequency`
+modes across polarizations with frequencies above `modes.minimum_frequency`
 (default 1 cm⁻¹).
 
 $$
@@ -205,15 +234,15 @@ R(k)\approx\frac{V_{\rm cell}}{4\pi}
 \frac{\epsilon(+Q_k)-\epsilon(-Q_k)}{2Q_k}.
 $$
 
-`mode_q` is in Å$\sqrt{\mathrm{amu}}$, not a maximum atomic displacement;
-it is independent of the atomic `displacement_amplitude` setting.
+`modes.q` is in Å$\sqrt{\mathrm{amu}}$, not a maximum atomic displacement;
+it is independent of the atomic `displacements.amplitude` setting.
 The generated directory contains `mode_manifest.json`, `mode_index`,
 `POSCAR_mode*`, and `ra_POSCAR_mode*/POSCAR`. Supplied `INCAR`, `KPOINTS`, and
 `POTCAR` files are symlinked automatically into every mode-displacement directory;
 no separate staging script is generated or needed. Calculations are run externally.
 
 `mode-tensors` validates displaced geometries and requires both signs, central
-differences, and `polarization: specific`. It writes
+differences, and `polarization.mode: specific`. It writes
 `raw_mode_tensors_<E>eV.npz`, `Raman_tensor_<E>eV`, and
 `Raman_intensity_complex_<E>eV`. Each mode tensor is extracted directly from
 its own pair; atomic denoising is a separate workflow.
@@ -236,22 +265,20 @@ for that invocation only; it does not rewrite `input.yaml`.
 
 | Command | Optional overrides → `input.yaml` setting |
 | --- | --- |
-| `spectropy displacements` | `--symmetry` → `symmetry`; `--basis` → `displacement_basis`. |
-| `spectropy derivatives` | `--difference` → `difference_scheme`; `--equilibrium-file` → `equilibrium_file`; `--saved-basis` / `--no-saved-basis` → `saved_basis`. |
-| `spectropy mode-displacements` | `--q` → `mode_q`; `--modes` → `mode_indices`; `--minimum-frequency` → `mode_minimum_frequency`; `--output` → `mode_displacements_directory`. |
-| `spectropy mode-tensors` | `--directory` → `mode_displacements_directory`; `--output` → `mode_results_directory`; `--source` → `dielectric_source`; `--energies` → `laser_energies`. |
+| `spectropy displacements` | `--symmetry` → `symmetry.reduction`; `--basis` → `displacements.basis`. |
+| `spectropy tensors` | `--difference` → `displacements.difference`; `--equilibrium-file` → `displacements.equilibrium_file`; `--saved-basis` / `--no-saved-basis` → `symmetry.saved_basis`. |
+| `spectropy mode-displacements` | `--q` → `modes.q`; `--modes` → `modes.indices`; `--minimum-frequency` → `modes.minimum_frequency`; `--output` → `modes.displacements_directory`. |
+| `spectropy mode-tensors` | `--directory` → `modes.displacements_directory`; `--output` → `modes.results_directory`; `--energies` → `spectrum.energies`. |
 
 All subcommands accept `--workdir PATH` (or `-C PATH`, default `.`) to choose
 the directory containing `input.yaml`, and `--help` to list options. The top-level
 command accepts `--version`. `--equilibrium-vasprun` is an alias for
 `--equilibrium-file`. `spectropy symmetry` writes equivalent-atom mappings to
-`symmetry_operation_matrices`; `spectrum` and `plot` use their `input.yaml` settings
+`symmetry_operation_matrices`; `spectrum` reads final mode tensors and `plot` reads intensities; both use `input.yaml`
 without additional scientific CLI options.
 
 ## Examples
 
 | Example | Starting point |
 | --- | --- |
-| [MoS2_Tutorial](examples/MoS2_Tutorial/README.md) | Bundled derivative data: calculate tensors and spectra. |
-| [MoS2_From_Displacements](examples/MoS2_From_Displacements/README.md) | Detailed earlier-stage walkthrough; structure, phonon, and raw dielectric bundles are placeholders, not yet supplied. |
-| [MoS2_Mode_Displacements](examples/MoS2_Mode_Displacements/README.md) | Displace collective Raman-active modes instead of individual atoms. |
+| [MoS2](examples/MoS2/README.md) | Minimal Cartesian 0.01 Å benchmark, including optical inputs, phonons, three displaced structures, and complete XML outputs; calculate tensors and spectra without running VASP. |

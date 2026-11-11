@@ -38,7 +38,7 @@ def get_user_input(input_path=DEFAULT_INPUT):
 
 def read_band_yaml(filepath="band.yaml"):
     print(f"Reading phonon modes from {filepath}...")
-    modes = read_registered_modes(filepath, provenance="atom_registration.json")
+    modes = read_registered_modes(filepath)
     return modes.frequencies_thz, modes.eigendisplacements, modes.natoms
 
 def read_dielectric_derivatives(filepath, total_atoms):
@@ -128,131 +128,70 @@ def read_irreps(filepath="irreps.yaml"):
         print(f"Reading irreducible representations from {filepath}...")
     return labels
     
-def run_raman_tensor(dielectric_derivatives_path=None, _phonons=None, output_prefix="", input_path=DEFAULT_INPUT):
-    if dielectric_derivatives_path is None:
-        for f in sorted(os.listdir('.')):
-            if f.startswith("epsilon_derivative_"):
-                dielectric_derivatives_path = f
-                break
-    if dielectric_derivatives_path is None:
-        print("***** epsilon_derivative_<freq> not found. Did you run `spectropy derivatives`? *****")
-        sys.exit(1)
+def run_raman_tensor(dielectric_derivatives_path, _phonons=None, output_prefix="", input_path=DEFAULT_INPUT):
+    """Import an existing atomic derivative file (Python helper for bundled data).
 
-    pol_incident, pol_scattered, axis = get_user_input(input_path)
-    polarization_mode = read_polarization_mode(input_path)
+    Files already contain Vcell/(4 pi); do not apply this factor again.
+    The normal CLI workflow contracts the reconstructed field in memory.
+    """
+    from spectropy_tensors import write_raman_tensors
+
     if _phonons is None:
         frequencies, eigendisps, total_atoms = read_band_yaml()
     else:
         frequencies, eigendisps, total_atoms = (_phonons.frequencies_thz,
             _phonons.eigendisplacements, _phonons.natoms)
-    eps_der_real, eps_der_imag = read_dielectric_derivatives(dielectric_derivatives_path, total_atoms)
-    representations = read_irreps()
+    real, imaginary = read_dielectric_derivatives(dielectric_derivatives_path, total_atoms)
+    tensors = np.einsum('jaik,mja->mik', real + 1j * imaginary, eigendisps)
+    name = os.path.basename(dielectric_derivatives_path)
+    energy = float(name.rsplit('_', 1)[-1].removesuffix('.json'))
+    write_raman_tensors(f"{output_prefix}Raman_tensor_{energy:.2f}eV",
+                        frequencies, tensors, read_irreps())
 
-    n_modes = total_atoms * 3
 
-    print("Calculating Raman tensors for each mode...")
-    raman_tensor_real = np.einsum('jaik,mja->mik', eps_der_real, eigendisps)
-    raman_tensor_imag = np.einsum('jaik,mja->mik', eps_der_imag, eigendisps)
-    raman_tensor_cmplx = raman_tensor_real + 1j * raman_tensor_imag
+def write_intensities(energy, frequencies, tensors, labels, input_path=DEFAULT_INPUT):
+    from spectropy_tensors import THZ_TO_CM1
 
-    print("Calculating Raman intensities...")
-    contracted_tensor = np.einsum('i,mik,k->m', pol_scattered, raman_tensor_cmplx, pol_incident)
-    intensities = np.abs(contracted_tensor)**2
-
-    avg_intensities = None
-    if polarization_mode == "average":
-        if axis == 'z':
-            avg_intensities = (np.abs(raman_tensor_cmplx[:, 0, 0])**2 + np.abs(raman_tensor_cmplx[:, 0, 1])**2 +
-                               np.abs(raman_tensor_cmplx[:, 1, 0])**2 + np.abs(raman_tensor_cmplx[:, 1, 1])**2)
-        elif axis == 'y':
-            avg_intensities = (np.abs(raman_tensor_cmplx[:, 0, 0])**2 + np.abs(raman_tensor_cmplx[:, 0, 2])**2 +
-                               np.abs(raman_tensor_cmplx[:, 2, 0])**2 + np.abs(raman_tensor_cmplx[:, 2, 2])**2)
-        elif axis == 'x':
-            avg_intensities = (np.abs(raman_tensor_cmplx[:, 1, 1])**2 + np.abs(raman_tensor_cmplx[:, 1, 2])**2 +
-                               np.abs(raman_tensor_cmplx[:, 2, 1])**2 + np.abs(raman_tensor_cmplx[:, 2, 2])**2)
-        else:
-            avg_intensities = np.sum(np.abs(raman_tensor_cmplx)**2, axis=(1, 2))
-
-    thz_to_cm1 = 33.35641
-    freq_cm1 = frequencies * thz_to_cm1
-    cutoff_cm1 = read_settings(input_path).frequency_cutoff_cm1
-    if cutoff_cm1 is not None:
-        selected = (frequencies > 0.0) & (frequencies >= cutoff_cm1 / thz_to_cm1)
+    settings = read_settings(input_path)
+    pol_incident, pol_scattered, axis = get_user_input(input_path)
+    intensities = np.abs(np.einsum('i,mik,k->m', pol_scattered, tensors, pol_incident))**2
+    average = None
+    if settings.polarization == "average":
+        axes = {"x": [1, 2], "y": [0, 2], "z": [0, 1]}[axis]
+        average = np.sum(np.abs(tensors[:, axes][:, :, axes])**2, axis=(1, 2))
+    freq_cm1 = frequencies * THZ_TO_CM1
+    cutoff = settings.frequency_cutoff_cm1
+    if cutoff is not None:
+        selected = (frequencies > 0.0) & (freq_cm1 >= cutoff)
         occupation = 1.0 / (np.exp(freq_cm1[selected] * 0.004824125) - 1.0)
         factor = (occupation + 1.0) / frequencies[selected]
         intensities[selected] *= factor
-        if avg_intensities is not None:
-            avg_intensities[selected] *= factor
-
-    print("Writing final output files...")
-    
-    filename = os.path.basename(dielectric_derivatives_path)
-    energy = (filename.removeprefix('raw_directional_derivative_').removesuffix('.json')
-              if filename.startswith('raw_directional_derivative_')
-              else filename.split('epsilon_derivative_', 1)[1])
-
-    def representation(index):
-        if representations is not None and index < len(representations):
-            return representations[index]
-        return "---"
-
-    tensor_path = f"{output_prefix}Raman_tensor_{energy}eV"
-    with open(tensor_path, "w") as f:
-        f.write("# Mode   Freq(THz)   Freq(cm-1)   Irrep.   Raman Tensor (Real + i*Imaginary)\n")
-        f.write("#--------------------------------------------------------------------------\n")
-        for i in range(n_modes):
-            rep = representation(i)
-            f.write(f"{i+1:5d} {frequencies[i]:10.3f} {freq_cm1[i]:11.3f}   {rep:<8s}\n")
-            for j in range(3):
-                row_str = "  ".join([f"{raman_tensor_cmplx[i, j, k].real:10.3f}{raman_tensor_cmplx[i, j, k].imag:+10.3f}j" for k in range(3)])
-                f.write(f"    {row_str}\n")
-            f.write("\n")
-
-    # Preserve the legacy active tensor alias, without overwriting named variants.
-    if not output_prefix:
-        import shutil
-        shutil.copyfile(tensor_path, "Raman_tensor")
-
-    with open(f"{output_prefix}Raman_intensity_complex_{energy}eV", "w") as f:
-        for i in range(n_modes):
-            f.write(f"{freq_cm1[i]:12.3f} {intensities[i]:18.4f}       {representation(i)}\n")
-
-    if avg_intensities is not None:
-        with open(f"{output_prefix}Raman_intensity_polarization_averaged_{energy}eV", "w") as f:
-            for i in range(n_modes):
-                f.write(f"{freq_cm1[i]:12.3f} {avg_intensities[i]:18.4f}       {representation(i)}\n")
-            
-    print("\ncalculate_spectrum.py finished successfully.")
-    print(f"Generated Raman_tensor and intensity files for {energy} eV.")
+        if average is not None:
+            average[selected] *= factor
+    outputs = {"complex": intensities}
+    if average is not None:
+        outputs["polarization_averaged"] = average
+    for kind, values in outputs.items():
+        path = f"Raman_intensity_{kind}_{energy:.2f}eV"
+        with open(path, "w") as stream:
+            for frequency, intensity, label in zip(freq_cm1, values, labels):
+                stream.write(f"{frequency:.16e} {intensity:.16e} {label}\n")
+        print(f"Wrote {path}")
 
 
-def run_raman_tensors_for_input(input_path=DEFAULT_INPUT, _phonons=None):
-    from spectropy_config import read_settings
+def run_spectrum(input_path=DEFAULT_INPUT):
+    """Calculate intensities from final mode tensors, not atomic intermediates."""
+    from spectropy_tensors import read_raman_tensors
 
     settings = read_settings(input_path)
-    for energy in settings.laser_energies:
-        derivative_path = f"epsilon_derivative_{energy:.2f}"
-        raw_path = f"raw_{derivative_path}"
-        directional_path = f"raw_directional_derivative_{energy:.2f}.json"
-        if os.path.isfile(directional_path):
-            raw_path = directional_path
-        corrected_path = f"corrected_{derivative_path}"
-        # Older unprojected datasets may only have the legacy filename. Never
-        # label an active, potentially corrected field as raw when denoising.
-        if not os.path.isfile(raw_path) and not settings.site_symmetry_projection:
-            raw_path = derivative_path
-        required = [raw_path]
-        if settings.site_symmetry_projection:
-            required.append(corrected_path)
-        for path in required:
-            if not os.path.isfile(path):
-                raise FileNotFoundError(f"Missing {path}; run `spectropy derivatives` first")
-        run_raman_tensor(raw_path, _phonons=_phonons, output_prefix="raw_", input_path=input_path)
-        if settings.site_symmetry_projection:
-            run_raman_tensor(corrected_path, _phonons=_phonons, output_prefix="corrected_", input_path=input_path)
-        # Existing workflow consumers continue to see the selected field.
-        run_raman_tensor(corrected_path if settings.site_symmetry_projection else raw_path,
-                         _phonons=_phonons, input_path=input_path)
+    paths = [f"Raman_tensor_{energy:.2f}eV" for energy in settings.laser_energies]
+    for path in paths:
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"Missing {path}; run `spectropy tensors` first")
+    for energy, path in zip(settings.laser_energies, paths):
+        frequencies, tensors, labels = read_raman_tensors(path)
+        write_intensities(energy, frequencies, tensors, labels, input_path)
+
 
 if __name__ == "__main__":
-    run_raman_tensors_for_input()
+    run_spectrum()

@@ -165,11 +165,10 @@ def generate(q=None, modes=None, reference=None,
     return manifest
 
 
-def reconstruct(directory=None, source=None, energies=None, output=None):
+def reconstruct(directory=None, energies=None, output=None):
     from calculate_dielectric_derivatives import read_dielectric
     settings = read_settings()
     directory = settings.mode_displacements_directory if directory is None else directory
-    source = settings.dielectric_source if source is None else source
     output = settings.mode_results_directory if output is None else output
     root = Path(directory)
     data = json.loads((root/"mode_manifest.json").read_text())
@@ -178,9 +177,9 @@ def reconstruct(directory=None, source=None, energies=None, output=None):
     if not np.isfinite(data["q"]) or data["q"] <= 0:
         raise ValueError("Manifest Q must be finite and positive")
     if settings.difference_scheme != "central":
-        raise ValueError("Collective mode tensors currently require difference_scheme: central")
+        raise ValueError("Collective mode tensors currently require displacements.difference: central")
     if settings.polarization != "specific":
-        raise ValueError("Collective intensity output currently requires polarization: specific")
+        raise ValueError("Collective intensity output currently requires polarization.mode: specific")
     volume = abs(np.linalg.det(data["lattice"]))
     mode_ids = [seed["mode_index"] for block in data["groups"] for seed in block["seeds"]]
     if not mode_ids or len(set(mode_ids)) != len(mode_ids):
@@ -204,7 +203,7 @@ def reconstruct(directory=None, source=None, energies=None, output=None):
         delta = actual.fractional_positions-expected
         if actual.atom_symbols != data["symbols"] or not np.allclose(actual.lattice,data["lattice"],atol=1e-9,rtol=0) or np.max(np.linalg.norm((delta-np.rint(delta)) @ actual.lattice,axis=1)) > 1e-7:
             raise ValueError(f"Mode-displacement geometry/order mismatch in {folder}")
-        real, imag = read_dielectric(folder/"vasprun.xml", energy, source)
+        real, imag = read_dielectric(folder/"vasprun.xml", energy)
         if real is None:
             raise ValueError(f"Missing dielectric data in {folder}")
         return real+1j*imag

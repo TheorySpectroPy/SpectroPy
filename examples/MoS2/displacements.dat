@@ -1,0 +1,8 @@
+SpectroPy mode=minimal basis=cartesian
+     3   Number of displacements
+Mo1       1    0.002252778978    0.000000000000    0.000286316866
+S1        2    0.002252778978    0.000000000000    0.000286316866
+S1        2   -0.002252778978   -0.000000000000   -0.000286316866
+     2     3     Number of atoms in SC
+Mo1       1
+S1        2

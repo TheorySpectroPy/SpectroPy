@@ -1,0 +1,22 @@
+polarization:
+  incident: [1, 0, 0]
+  scattered: [1, 0, 0]
+  surface_normal: z
+  mode: average
+
+spectrum:
+  energies: [0.00, 1.96, 2.33] # eV
+  cutoff: 0 # Apply the benchmark's Bose/phonon-frequency factor to positive modes
+
+displacements:
+  basis: cartesian
+  amplitude: 0.01 # Angstrom; physical length, including mixed directions
+  difference: central
+
+symmetry:
+  reduction: on
+  denoise: true
+
+broadening:
+  hwhm: 1.0 # cm^-1
+  type: lorentzian

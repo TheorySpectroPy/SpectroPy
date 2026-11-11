@@ -1,0 +1,168 @@
+phonopy_version: '3.5.1'
+space_group_type: 'P-6m2'
+space_group_number: 187
+point_group_type: '-6m2'
+space_group_operations:
+- rotation: # 1
+  - [ 1,  0 , 0]
+  - [ 0,  1 , 0]
+  - [ 0,  0 , 1]
+  translation: [ 0.00000,  0.00000,  0.00000 ]
+- rotation: # 2
+  - [-1,  1 , 0]
+  - [-1,  0 , 0]
+  - [ 0,  0 ,-1]
+  translation: [ 0.00000,  0.00000,  0.00000 ]
+- rotation: # 3
+  - [ 0, -1 , 0]
+  - [ 1, -1 , 0]
+  - [ 0,  0 , 1]
+  translation: [ 0.00000,  0.00000,  0.00000 ]
+- rotation: # 4
+  - [ 1,  0 , 0]
+  - [ 0,  1 , 0]
+  - [ 0,  0 ,-1]
+  translation: [ 0.00000,  0.00000,  0.00000 ]
+- rotation: # 5
+  - [-1,  1 , 0]
+  - [-1,  0 , 0]
+  - [ 0,  0 , 1]
+  translation: [ 0.00000,  0.00000,  0.00000 ]
+- rotation: # 6
+  - [ 0, -1 , 0]
+  - [ 1, -1 , 0]
+  - [ 0,  0 ,-1]
+  translation: [ 0.00000,  0.00000,  0.00000 ]
+- rotation: # 7
+  - [ 0, -1 , 0]
+  - [-1,  0 , 0]
+  - [ 0,  0 ,-1]
+  translation: [ 0.00000,  0.00000,  0.00000 ]
+- rotation: # 8
+  - [ 1,  0 , 0]
+  - [ 1, -1 , 0]
+  - [ 0,  0 , 1]
+  translation: [ 0.00000,  0.00000,  0.00000 ]
+- rotation: # 9
+  - [-1,  1 , 0]
+  - [ 0,  1 , 0]
+  - [ 0,  0 ,-1]
+  translation: [ 0.00000,  0.00000,  0.00000 ]
+- rotation: # 10
+  - [ 0, -1 , 0]
+  - [-1,  0 , 0]
+  - [ 0,  0 , 1]
+  translation: [ 0.00000,  0.00000,  0.00000 ]
+- rotation: # 11
+  - [ 1,  0 , 0]
+  - [ 1, -1 , 0]
+  - [ 0,  0 ,-1]
+  translation: [ 0.00000,  0.00000,  0.00000 ]
+- rotation: # 12
+  - [-1,  1 , 0]
+  - [ 0,  1 , 0]
+  - [ 0,  0 , 1]
+  translation: [ 0.00000,  0.00000,  0.00000 ]
+atom_mapping:
+  1: 1
+  2: 2
+  3: 2
+site_symmetries:
+- atom: 1
+  Wyckoff: 'd'
+  site_point_group: '-6m2'
+  orientation:
+  - [ 1,  0,  0]
+  - [ 0,  1,  0]
+  - [ 0,  0,  1]
+  rotations:
+  - # 1
+    - [ 1,  0,  0]
+    - [ 0,  1,  0]
+    - [ 0,  0,  1]
+  - # 2
+    - [-1,  1,  0]
+    - [-1,  0,  0]
+    - [ 0,  0, -1]
+  - # 3
+    - [ 0, -1,  0]
+    - [ 1, -1,  0]
+    - [ 0,  0,  1]
+  - # 4
+    - [ 1,  0,  0]
+    - [ 0,  1,  0]
+    - [ 0,  0, -1]
+  - # 5
+    - [-1,  1,  0]
+    - [-1,  0,  0]
+    - [ 0,  0,  1]
+  - # 6
+    - [ 0, -1,  0]
+    - [ 1, -1,  0]
+    - [ 0,  0, -1]
+  - # 7
+    - [ 0, -1,  0]
+    - [-1,  0,  0]
+    - [ 0,  0, -1]
+  - # 8
+    - [ 1,  0,  0]
+    - [ 1, -1,  0]
+    - [ 0,  0,  1]
+  - # 9
+    - [-1,  1,  0]
+    - [ 0,  1,  0]
+    - [ 0,  0, -1]
+  - # 10
+    - [ 0, -1,  0]
+    - [-1,  0,  0]
+    - [ 0,  0,  1]
+  - # 11
+    - [ 1,  0,  0]
+    - [ 1, -1,  0]
+    - [ 0,  0, -1]
+  - # 12
+    - [-1,  1,  0]
+    - [ 0,  1,  0]
+    - [ 0,  0,  1]
+- atom: 2
+  Wyckoff: 'i'
+  site_point_group: '3m'
+  orientation:
+  - [ 1,  0,  0]
+  - [ 0,  1,  0]
+  - [ 0,  0,  1]
+  rotations:
+  - # 1
+    - [ 1,  0,  0]
+    - [ 0,  1,  0]
+    - [ 0,  0,  1]
+  - # 2
+    - [ 0, -1,  0]
+    - [ 1, -1,  0]
+    - [ 0,  0,  1]
+  - # 3
+    - [-1,  1,  0]
+    - [-1,  0,  0]
+    - [ 0,  0,  1]
+  - # 4
+    - [ 1,  0,  0]
+    - [ 1, -1,  0]
+    - [ 0,  0,  1]
+  - # 5
+    - [ 0, -1,  0]
+    - [-1,  0,  0]
+    - [ 0,  0,  1]
+  - # 6
+    - [-1,  1,  0]
+    - [ 0,  1,  0]
+    - [ 0,  0,  1]
+# Input crystal structure: "CONTCAR"
+# Symmetrized conventional unit cell is written into "BPOSCAR" and
+# Symmetrized primitive is written into "PPOSCAR" and 
+# Unit cell and primitive cell have been written in "phonopy_symcells.yaml".
+# These structures can be read in a python script as follows:
+#
+# import phonopy
+# ph = phonopy.load("phonopy_symcells.yaml")
+# unitcell = ph.unitcell
+# primitive_cell = ph.primitive

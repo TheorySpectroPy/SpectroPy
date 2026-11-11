@@ -50,7 +50,7 @@ def save_directional(path, document):
 
 
 def reconstruct_directional_file(path, total_atoms):
-    """Reconstruct in memory for spectrum consumers; never save a raw xyz file."""
+    """Reconstruct a debugging export in memory; never save a raw xyz file."""
     doc = json.loads(Path(path).read_text())
     if doc.get('schema') != SCHEMA or doc.get('natoms') != total_atoms:
         raise ValueError('Invalid directional derivative schema or atom count')
