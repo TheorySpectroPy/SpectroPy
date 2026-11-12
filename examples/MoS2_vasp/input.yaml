@@ -5,7 +5,7 @@ polarization:
   mode: average
 
 spectrum:
-  energies: [0.00, 1.96, 2.33] # eV
+  energies: [0.00] # eV; static response for the basic demonstration
   cutoff: 0 # Apply the benchmark's Bose/phonon-frequency factor to positive modes
 
 displacements:

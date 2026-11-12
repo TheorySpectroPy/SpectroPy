@@ -194,6 +194,9 @@ settings. Change polarization and rerun this stage without reprocessing XML.
 For the full settings reference, reconstruction equations, and other options,
 see [Advanced Usage](docs.md).
 
+Try the [MoS2_vasp example](examples/MoS2_vasp/README.md) to analyze bundled
+VASP outputs, generate your own calculations, or compare symmetry on and off.
+
 ## Additional Utilities
 
 ### Visualizing Phonon Modes

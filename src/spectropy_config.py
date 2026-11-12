@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, fields
+from fractions import Fraction
 from pathlib import Path
 import math
 import re
@@ -139,6 +140,35 @@ def _number(value, name):
     return number
 
 
+def _laser_energies(value):
+    """Expand an inclusive decimal range without cumulative float-step error."""
+    name = "spectrum.energies"
+    if isinstance(value, dict):
+        if set(value) != {"start", "stop", "step"}:
+            raise ValueError(f"{name} range requires exactly start, stop, and step")
+        start, stop, step = (Fraction(str(_number(value[key], f"{name}.{key}")))
+                             for key in ("start", "stop", "step"))
+        if start < 0 or stop < start or step <= 0:
+            raise ValueError(f"{name} range requires 0 <= start <= stop and a positive step")
+        intervals = (stop - start) / step
+        if intervals.denominator != 1:
+            raise ValueError(f"{name}.stop must lie on the start + n*step grid (inclusive)")
+        count = intervals.numerator + 1
+        if count > 100_000:
+            raise ValueError(f"{name} range is too large (maximum 100000 values)")
+        energies = tuple(float(start + i * step) for i in range(count))
+    else:
+        items = value if isinstance(value, list) else [value]
+        if not items:
+            raise ValueError(f"{name} must contain at least one value")
+        energies = tuple(dict.fromkeys(_number(item, name) for item in items))
+    if min(energies) < 0:
+        raise ValueError(f"{name} must be non-negative")
+    if len({f"{energy:.2f}" for energy in energies}) != len(energies):
+        raise ValueError(f"{name} values must have distinct filenames at two decimal places")
+    return energies
+
+
 def _settings_from_mapping(values):
     if not isinstance(values, dict):
         raise ValueError("Settings must be a YAML mapping of named keys and values")
@@ -195,9 +225,7 @@ def _settings_from_mapping(values):
 
     surface_normal = (choice("surface_normal", ("x", "y", "z"))
                       if values.get("surface_normal") is not None else None)
-    energies = tuple(dict.fromkeys(numbers("laser_energies", list(defaults.laser_energies))))
-    if min(energies) < 0:
-        raise ValueError("spectrum.energies must be non-negative")
+    energies = _laser_energies(values.get("laser_energies", list(defaults.laser_energies)))
     amplitude = None
     if values.get("displacement_amplitude") is not None:
         amplitude = numbers("displacement_amplitude", None)
