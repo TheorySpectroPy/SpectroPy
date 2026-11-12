@@ -23,6 +23,7 @@ class Settings:
     broadening_type: str = "lorentzian"
     polarization: str = "specific"
     frequency_cutoff_cm1: float | None = None
+    temperature: float = 0.0
     difference_scheme: str = "central"
     site_symmetry_projection: bool = False
     symmetry: str = "off"
@@ -49,7 +50,8 @@ _SECTIONS = {
         "incident": "incident_polarization", "scattered": "scattered_polarization",
         "surface_normal": "surface_normal", "mode": "polarization",
     },
-    "spectrum": {"energies": "laser_energies", "cutoff": "frequency_cutoff_cm1"},
+    "spectrum": {"energies": "laser_energies", "cutoff": "frequency_cutoff_cm1",
+                 "temperature": "temperature"},
     "displacements": {
         "basis": "displacement_basis", "amplitude": "displacement_amplitude",
         "difference": "difference_scheme", "equilibrium_file": "equilibrium_file",
@@ -260,6 +262,7 @@ def _settings_from_mapping(values):
         broadening_type=choice("broadening_type", ("lorentzian", "gaussian"),
                                {"l": "lorentzian", "g": "gaussian"}),
         polarization=choice("polarization", ("specific", "average")),
+        temperature=bounded_number("temperature", defaults.temperature),
         frequency_cutoff_cm1=(bounded_number("frequency_cutoff_cm1", None)
                               if values.get("frequency_cutoff_cm1") is not None else None),
         difference_scheme=choice("difference_scheme", ("central", "forward")),
