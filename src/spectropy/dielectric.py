@@ -80,7 +80,7 @@ def read_dielectrics_xml(xml_path, energies):
 
 def collect_vasprun_files(displacements, destination=None, source="vasprun.xml"):
     _xml_only(source)
-    from spectropy_paths import displacement_root
+    from .paths import displacement_root
     root = displacement_root()
     destination = root / 'vasprun' if destination is None else destination
     os.makedirs(destination, exist_ok=True)
@@ -96,15 +96,13 @@ def collect_vasprun_files(displacements, destination=None, source="vasprun.xml")
 
 def read_displaced_dielectrics(displacements, lattice, target_frequency, directory=None, source="vasprun.xml"):
     _xml_only(source)
-    from spectropy_paths import displacement_root
+    from .paths import displacement_root
     if directory is None:
         directory = displacement_root() / 'vasprun'
     measured = defaultdict(list)
     for displacement in displacements:
         filename = os.path.join(directory, f"{displacement.name}.xml")
         real, imaginary = read_dielectric(filename, target_frequency, source)
-        if real is None:
-            sys.exit(1)
         direction = displacement.fractional_vector @ lattice
         measured[displacement.atom_index].append((direction, real, imaginary))
     return dict(measured)
@@ -120,7 +118,7 @@ def read_displaced_dielectrics_many(displacements, lattice, energies, directory=
     whenever reciprocity is needed to complete missing transpose components.
     """
     _xml_only(source)
-    from spectropy_paths import displacement_root
+    from .paths import displacement_root
     if directory is None:
         directory = displacement_root() / 'vasprun'
     energies = list(energies)

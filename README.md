@@ -32,6 +32,9 @@ python -m pip install '.[all]'   # Also install plotting and Phonopy dependencie
 spectropy --help
 ```
 
+After updating an older checkout, reinstall to refresh the command entry point.
+The library is now a `spectropy` package; `python -m spectropy` runs the same CLI.
+
 The dielectric reader accepts complete `vasprun.xml` files with either nine
 components or the standard six-component dielectric format. All printed entries
 are preserved independently. If transpose components are missing, SpectroPy
@@ -218,7 +221,7 @@ For VESTA, open `CONTCAR` and save a project file (e.g. `template.vesta`) in
 your working directory. From that directory, run the installed helper:
 
 ```bash
-python -m visualize_modes
+python -m spectropy.visualization
 ```
 
 | Prompt | Choice |

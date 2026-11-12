@@ -2,7 +2,7 @@ import numpy as np
 import os
 import sys
 import yaml
-from spectropy_structure import read_structure
+from .structure import read_structure
 
 
 def read_symmetry_file(filepath="symmetry"):
@@ -112,7 +112,7 @@ def run_mapping():
             for row in matrix:
                 f.write(f"{row[0]:15.4f}{row[1]:15.4f}{row[2]:15.4f}\n")
 
-    print("\nprocess_symmetry.py finished successfully.")
+    print("\nspectropy symmetry finished successfully.")
 
 if __name__ == "__main__":
     run_mapping()

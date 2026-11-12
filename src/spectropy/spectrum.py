@@ -2,12 +2,8 @@ import numpy as np
 import os
 import sys
 import re
-from spectropy_config import DEFAULT_INPUT, Settings, read_settings, write_settings
-from spectropy_phonons import read_registered_modes, read_irreps as _read_irreps
-
-
-def read_polarization_mode(input_path=DEFAULT_INPUT):
-    return read_settings(input_path).polarization
+from .config import DEFAULT_INPUT, Settings, read_settings, write_settings
+from .phonons import read_registered_modes, read_irreps as _read_irreps
 
 
 def get_user_input(input_path=DEFAULT_INPUT):
@@ -42,7 +38,7 @@ def read_band_yaml(filepath="band.yaml"):
     return modes.frequencies_thz, modes.eigendisplacements, modes.natoms
 
 def read_dielectric_derivatives(filepath, total_atoms):
-    print(f"Reading atomic Raman tensors from {filepath}...")
+    print(f"Reading Cartesian atomic dielectric derivatives from {filepath}...")
     with open(filepath, 'r') as f:
         lines = f.readlines()
     if lines and lines[0].startswith('! Raw directional dielectric derivatives'):
@@ -110,7 +106,7 @@ def read_dielectric_derivatives(filepath, total_atoms):
                if (i + 1) not in eps_der_real_dict or (i + 1) not in eps_der_imag_dict]
     if missing:
         print(f"***** dielectric_derivatives file is missing atom(s) {missing} -- "
-              "was it written by an up-to-date calculate_dielectric_derivatives.py? *****")
+              "regenerate the final atomic derivatives with `spectropy tensors`. *****")
         sys.exit(1)
 
     eps_der_real = np.zeros((total_atoms, 3, 3, 3))
@@ -134,7 +130,7 @@ def run_raman_tensor(dielectric_derivatives_path, _phonons=None, output_prefix="
     Files already contain Vcell/(4 pi); do not apply this factor again.
     The normal CLI workflow contracts the reconstructed field in memory.
     """
-    from spectropy_tensors import write_raman_tensors
+    from .tensors import write_raman_tensors
 
     if _phonons is None:
         frequencies, eigendisps, total_atoms = read_band_yaml()
@@ -150,7 +146,7 @@ def run_raman_tensor(dielectric_derivatives_path, _phonons=None, output_prefix="
 
 
 def write_intensities(energy, frequencies, tensors, labels, input_path=DEFAULT_INPUT):
-    from spectropy_tensors import THZ_TO_CM1
+    from .tensors import THZ_TO_CM1
 
     settings = read_settings(input_path)
     pol_incident, pol_scattered, axis = get_user_input(input_path)
@@ -181,7 +177,7 @@ def write_intensities(energy, frequencies, tensors, labels, input_path=DEFAULT_I
 
 def run_spectrum(input_path=DEFAULT_INPUT):
     """Calculate intensities from final mode tensors, not atomic intermediates."""
-    from spectropy_tensors import read_raman_tensors
+    from .tensors import read_raman_tensors
 
     settings = read_settings(input_path)
     paths = [f"Raman_tensor_{energy:.2f}eV" for energy in settings.laser_energies]

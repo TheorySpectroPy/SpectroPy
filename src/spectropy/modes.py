@@ -9,11 +9,11 @@ import json
 import numpy as np
 import yaml
 
-from spectropy_structure import read_structure, write_structure
-from spectropy_phonons import read_gamma_modes, align_mode_atoms
-from spectropy_symmetry import symmetry_operations, mode_representations
-from spectropy_config import read_settings
-from spectropy_paths import link_vasp_inputs
+from .structure import read_structure, write_structure
+from .phonons import read_gamma_modes, align_mode_atoms
+from .mode_symmetry import symmetry_operations, mode_representations
+from .config import read_settings
+from .paths import link_vasp_inputs
 
 
 def allowed_tensor_dimension(representations, rotations, tolerance=1e-7):
@@ -160,13 +160,13 @@ def generate(q=None, modes=None, reference=None,
         "Both signs of every selected mode are independently calculated.\n"
         "a = positive, b = negative. mode_index columns are mode, cm^-1, Q.\n"
         "Never relax a mode-displaced optical structure. This is central difference.\n")
-    print(f"Generated {len(list(root.glob('ra_POSCAR_mode*')))} signed jobs for "
+    print(f"Generated {len(list(root.glob('ra_POSCAR_mode*')))} signed displacements for "
           f"{sum(len(g['modes']) for g in manifest['groups'])} mode partners in {root}")
     return manifest
 
 
 def reconstruct(directory=None, energies=None, output=None):
-    from calculate_dielectric_derivatives import read_dielectric
+    from .dielectric import read_dielectric
     settings = read_settings()
     directory = settings.mode_displacements_directory if directory is None else directory
     output = settings.mode_results_directory if output is None else output
@@ -204,8 +204,6 @@ def reconstruct(directory=None, energies=None, output=None):
         if actual.atom_symbols != data["symbols"] or not np.allclose(actual.lattice,data["lattice"],atol=1e-9,rtol=0) or np.max(np.linalg.norm((delta-np.rint(delta)) @ actual.lattice,axis=1)) > 1e-7:
             raise ValueError(f"Mode-displacement geometry/order mismatch in {folder}")
         real, imag = read_dielectric(folder/"vasprun.xml", energy)
-        if real is None:
-            raise ValueError(f"Missing dielectric data in {folder}")
         return real+1j*imag
     for energy in settings.laser_energies if energies is None else energies:
         tensors = {}

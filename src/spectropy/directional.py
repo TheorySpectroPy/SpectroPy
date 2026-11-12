@@ -1,7 +1,7 @@
 """Measured-direction raw output, with explicit physical units."""
 from pathlib import Path
 import numpy as np
-from reconstruct_dielectric_derivatives import fractional_finite_differences
+from .reconstruction import fractional_finite_differences
 
 
 def directional_document(energy, structure, measurements, sites,

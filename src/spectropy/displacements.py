@@ -9,11 +9,11 @@ import shutil
 import numpy as np
 import yaml
 
-from process_symmetry import read_site_symmetries, read_symmetry_file
-from reconstruct_dielectric_derivatives import build_fractional_bases, write_fractional_bases
-from spectropy_config import DEFAULT_INPUT, read_settings
-from spectropy_paths import link_vasp_inputs
-from spectropy_structure import Structure, read_structure, write_structure
+from .symmetry import read_site_symmetries
+from .reconstruction import build_fractional_bases, write_fractional_bases
+from .config import DEFAULT_INPUT, read_settings
+from .paths import link_vasp_inputs
+from .structure import Structure, read_structure, write_structure
 
 
 @dataclass(frozen=True)

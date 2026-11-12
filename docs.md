@@ -308,3 +308,22 @@ without additional scientific CLI options.
 | --- | --- |
 | [MoS2_vasp](examples/MoS2_vasp/README.md) | Minimal Cartesian 0.01 Å benchmark with optical inputs, phonons, three displaced structures, XML outputs, and a static Raman spectrum. |
 | [MoS2_qe — WIP](examples/MoS2_qe/README.md) | Documentation starter only; the QE interface and a runnable dataset are not included. |
+
+## Python Package
+
+The implementation lives under `src/spectropy`. Import helpers from the package,
+for example:
+
+```python
+from spectropy.config import read_settings
+from spectropy.tensors import run_tensors
+
+settings = read_settings("input.yaml")
+run_tensors()
+```
+
+The `spectropy` command and `python -m spectropy` provide the same CLI.
+Older flat imports such as `from spectropy_config import read_settings` must be
+updated to `from spectropy.config import read_settings`; no duplicate flat-module
+wrappers are installed. Calculation settings, output formats, and numerical
+algorithms are unchanged by the package move.

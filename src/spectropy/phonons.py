@@ -7,7 +7,7 @@ import yaml
 import json
 import hashlib
 
-from spectropy_structure import read_structure
+from .structure import read_structure
 
 
 @dataclass(frozen=True)
