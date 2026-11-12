@@ -30,26 +30,12 @@ all = ["matplotlib>=3.5", "phonopy>=2.0", "spglib>=2.0"]
 dev = ["pytest>=7"]
 
 [project.scripts]
-spectropy = "spectropy_cli:main"
+spectropy = "spectropy.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-py-modules = [
-    "calculate_dielectric_derivatives",
-    "calculate_spectrum",
-    "generate_raman_plots",
-    "process_symmetry",
-    "reconstruct_dielectric_derivatives",
-    "spectropy_cli",
-    "spectropy_symmetry",
-    "spectropy_config",
-    "spectropy_derivatives",
-    "spectropy_tensors",
-    "spectropy_directional",
-    "spectropy_displacements",
-    "spectropy_phonons",
-    "spectropy_paths",
-    "spectropy_structure",
-    "spectropy_modes",
-    "visualize_modes",
-]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["spectropy", "spectropy.*"]
+namespaces = false

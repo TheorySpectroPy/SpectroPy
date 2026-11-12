@@ -4,8 +4,8 @@ import re
 
 import numpy as np
 
-from spectropy_config import DEFAULT_INPUT, read_settings
-from spectropy_phonons import read_registered_modes, read_irreps
+from .config import DEFAULT_INPUT, read_settings
+from .phonons import read_registered_modes, read_irreps
 
 
 THZ_TO_CM1 = 33.35641
@@ -84,7 +84,7 @@ def contract_atomic_derivatives(structure, final, phonons):
 
 def run_tensors(input_path=DEFAULT_INPUT, use_saved_basis=None,
                 difference_scheme=None, equilibrium_vasprun=None):
-    from spectropy_derivatives import run_derivatives
+    from .derivatives import run_derivatives
 
     # Validate options and atom registration before processing large XML files.
     read_settings(input_path)

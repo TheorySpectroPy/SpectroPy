@@ -89,18 +89,6 @@ def project_crystal_tensor_field(tensors, lattice, positions, rotations, transla
     return .5*(result+result.swapaxes(1,2))
 
 
-def project_representatives(real, imaginary, site_symmetries, lattice, atom_mapping):
-    """Project measured representatives only; never discard extra measured atoms."""
-    if set(real) != set(atom_mapping.values()) or set(imaginary) != set(real):
-        raise ValueError('Site projection requires exactly one measured representative per orbit')
-    for atom in real:
-        if atom not in site_symmetries:
-            raise ValueError(f'Missing site group for representative atom {atom}')
-        rotations = [frac_to_cart_rotation(r, lattice) for r in site_symmetries[atom]['rotations']]
-        real[atom] = project_reciprocal_site_tensor(real[atom], rotations)
-        imaginary[atom] = project_reciprocal_site_tensor(imaginary[atom], rotations)
-
-
 def _direction_index(direction, known_directions, atol=1e-6):
     for index, known in enumerate(known_directions):
         if np.allclose(np.cross(direction, known), 0, atol=atol):

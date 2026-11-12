@@ -1,10 +1,16 @@
 # MoS₂: VASP
 
-This example reduces **nine atomic displacement directions to two** using
-symmetry—a **78% reduction in sampled directions** for this three-atom MoS₂
-cell. SpectroPy reconstructs the remaining directions and equivalent atoms,
+This example uses **3 atomic displacements versus 10 central-difference mode
+displacements**—70% fewer displaced-structure calculations for this MoS₂ cell.
+The three atomic structures are Mo(+), S(+), and S(−); symmetry supplies the
+missing Mo(−) response. SpectroPy reconstructs the remaining directions and equivalent atoms,
 denoises the atomic responses, and calculates the mode Raman tensors.
 The savings depend on the structure's retained symmetry, not just its size.
+
+The mode baseline counts both partners of $E''$ and $E'$, plus $A_1'$:
+$2+2+1=5$ Raman-active optical modes, each displaced with both signs:
+$5\times2=10$ central-difference structures. This counts all Raman polarizations;
+for xx alone, $E''$ is invisible and the mode baseline is 6 structures instead.
 
 The **minimal Cartesian, 0.01 Å PBEsol benchmark** includes the calculated
 structures, phonons, and complete dielectric XML outputs. You can analyze
@@ -116,7 +122,6 @@ displacements**, change only `symmetry.reduction` between the two inputs:
 | --- | --- | --- |
 | `symmetry.reduction` | `on` | `off` |
 | `symmetry.denoise` | `true` | `true` |
-| Sampled atomic directions | 2 mixed directions, on representative Mo and S atoms | 9 axes: x, y, z for each of the 3 atoms |
 | `displacements.amplitude` | 0.01 Å | 0.01 Å |
 | `displacements.difference` | `central` | `central` |
 

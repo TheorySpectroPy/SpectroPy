@@ -4,6 +4,7 @@ import argparse
 import importlib
 import os
 from collections.abc import Callable
+from . import __version__
 
 
 def _run_in_directory(workdir: str, operation: Callable[[], None]) -> None:
@@ -22,10 +23,10 @@ def _commands(symmetry: str | None, basis: str | None = None) -> dict[str, tuple
         return run
 
     def spectrum() -> None:
-        getattr(importlib.import_module("calculate_spectrum"), "run_spectrum")()
+        getattr(importlib.import_module('spectropy.spectrum'), "run_spectrum")()
 
     def displacements() -> None:
-        getattr(importlib.import_module("spectropy_displacements"), "run_displacements")(symmetry, basis=basis)
+        getattr(importlib.import_module('spectropy.displacements'), "run_displacements")(symmetry, basis=basis)
 
     descriptions = {
         "off": "Generate all +/- basis-axis displacements on every atom.",
@@ -40,7 +41,7 @@ def _commands(symmetry: str | None, basis: str | None = None) -> dict[str, tuple
         ),
         "symmetry": (
             "Write the symmetry operations that map equivalent atoms.",
-            stage("process_symmetry", "run_mapping"),
+            stage('spectropy.symmetry', "run_mapping"),
         ),
         "spectrum": (
             "Calculate polarized intensities for every laser energy in input.yaml.",
@@ -48,7 +49,7 @@ def _commands(symmetry: str | None, basis: str | None = None) -> dict[str, tuple
         ),
         "plot": (
             "Interactively broaden and plot generated Raman intensities.",
-            stage("generate_raman_plots", "run_automation"),
+            stage('spectropy.plotting', "run_automation"),
         ),
     }
 
@@ -61,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
             "dielectric-tensor results. DFT calculations are run externally."
         ),
     )
-    parser.add_argument("--version", action="version", version="spectropy 0.1.0")
+    parser.add_argument("--version", action="version", version=f"spectropy {__version__}")
     subparsers = parser.add_subparsers(dest="command", title="commands", metavar="COMMAND")
 
     def add_workdir(command_parser: argparse.ArgumentParser) -> None:
@@ -122,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command in {"mode-displacements", "mode-tensors"}:
         def collective():
-            module = importlib.import_module("spectropy_modes")
+            module = importlib.import_module('spectropy.modes')
             if args.command == "mode-displacements":
                 module.generate(q=args.q, modes=args.modes,
                                 output=args.output, minimum_frequency=args.minimum_frequency)
@@ -131,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
         _run_in_directory(args.workdir, collective)
     elif args.command == "tensors":
         def derive():
-            importlib.import_module("spectropy_tensors").run_tensors(
+            importlib.import_module('spectropy.tensors').run_tensors(
                 use_saved_basis=args.saved_basis, difference_scheme=args.difference,
                 equilibrium_vasprun=args.equilibrium_vasprun)
         _run_in_directory(args.workdir, derive)

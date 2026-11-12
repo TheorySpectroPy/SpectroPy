@@ -4,7 +4,7 @@ from matplotlib import rc
 import os
 import re
 import shutil
-from spectropy_config import DEFAULT_INPUT, read_settings
+from .config import DEFAULT_INPUT, read_settings
 
 if shutil.which('latex'):
     rc('text', usetex=True)

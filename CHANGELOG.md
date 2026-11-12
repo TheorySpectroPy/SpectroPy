@@ -2,6 +2,11 @@
 
 ## Unreleased — supported workflow simplification
 
+- Modules now live in the `spectropy` package under `src/spectropy`, with names
+  such as `config`, `displacements`, `tensors`, and `spectrum`. CLI commands and
+  file formats are unchanged; `python -m spectropy` is also supported. Python
+  consumers must use package-qualified imports. Removed only unused wrappers,
+  one unused import, and unreachable XML-reader fallback checks.
 - Raw directional derivatives now use labeled text, `raw_directional_derivative_<E>`,
   with real/imaginary 3×3 matrices and direction/sign metadata, instead of JSON.
   The obsolete JSON-to-Cartesian reconstruction helper is removed; spectra

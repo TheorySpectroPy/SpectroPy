@@ -2,8 +2,8 @@ import numpy as np
 import os
 import sys
 import re
-from spectropy_structure import read_structure
-from spectropy_phonons import read_gamma_modes
+from .structure import read_structure
+from .phonons import read_gamma_modes
 
 def read_contcar(filepath="CONTCAR"):
     structure = read_structure(filepath)

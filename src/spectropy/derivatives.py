@@ -3,16 +3,16 @@ import sys
 
 import numpy as np
 
-from calculate_dielectric_derivatives import (collect_vasprun_files,
+from .dielectric import (collect_vasprun_files,
     read_displaced_dielectrics_many, read_dielectrics_xml)
-from process_symmetry import compute_mapping_matrices, read_site_symmetries, read_symmetry_file
-from reconstruct_dielectric_derivatives import reconstruct_fractional_derivatives, read_fractional_bases
-from spectropy_config import DEFAULT_INPUT, read_settings
-from spectropy_displacements import read_displacement_mode, read_displacements
-from spectropy_structure import read_structure
-from spectropy_paths import displacement_root
-from spectropy_directional import directional_document, save_directional
-from reconstruct_dielectric_derivatives import project_crystal_tensor_field
+from .symmetry import compute_mapping_matrices, read_site_symmetries, read_symmetry_file
+from .reconstruction import reconstruct_fractional_derivatives, read_fractional_bases
+from .config import DEFAULT_INPUT, read_settings
+from .displacements import read_displacement_mode, read_displacements
+from .structure import read_structure
+from .paths import displacement_root
+from .directional import directional_document, save_directional
+from .reconstruction import project_crystal_tensor_field
 
 
 def _write_dielectrics(path, target_frequency, measurements, equilibrium=None):
