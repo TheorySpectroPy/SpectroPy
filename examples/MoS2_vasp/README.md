@@ -24,14 +24,35 @@ spectropy plot
 
 | Command | Output at 0.00 eV |
 | --- | --- |
-| `tensors` | `Raman_tensor_0.00eV`: final complex Cartesian mode tensors. |
+| `tensors` | `Raman_tensor_0.00eV`: final complex Cartesian mode tensors, plus the atomic and dielectric outputs below. |
 | `spectrum` | `Raman_intensity_complex_0.00eV` for xx polarization; `Raman_intensity_polarization_averaged_0.00eV` for the in-plane channel sum. |
 | `plot` | PNG spectra and the unnormalized two-column broadened xx spectrum. |
 
 `input.yaml` selects central differences, symmetry reduction and denoising,
 and Lorentzian HWHM 1 cm⁻¹. `spectrum.cutoff: 0` retains the benchmark's
-Bose/phonon-frequency factor for positive-frequency modes. Per-atom and raw
-directional debugging files are optional; see [Advanced Usage](../../docs.md).
+Bose/phonon-frequency factor for positive-frequency modes. This tutorial also
+enables the optional atomic and dielectric exports:
+
+```yaml
+output:
+  per_atom:
+    enabled: true
+    raw_directional_derivatives: true
+```
+
+| Additional `spectropy tensors` output | Contents |
+| --- | --- |
+| `raw_directional_derivative_0.00` | Labeled text: raw real/imaginary per-atom derivative matrices along the measured unit directions, including step lengths and whether symmetry supplied the opposite sign. |
+| `epsilon_derivative_0.00` | Final **denoised and reconstructed** atomic derivatives: real/imaginary Cartesian x, y, z slices for every atom. |
+| `dielectric_tensor_0.00` | Sampled, unprojected real/imaginary Cartesian dielectric matrices for each directly calculated signed displacement. |
+
+Atomic derivative exports include $V_{\rm cell}/(4\pi)$ and have units of Å²;
+the sampled dielectric matrices are dimensionless and have no volume factor.
+The raw derivatives retain the **measured mixed-direction basis**, not inferred
+Cartesian slices or equivalent atoms. All nine dielectric components are retained
+independently in this example. These exports are enabled here for inspection;
+the library default still saves only the final mode tensors.
+See [Advanced Usage](../../docs.md) for formats and optional settings.
 
 ### Static spectrum
 
@@ -104,8 +125,9 @@ responses into full-displacement folders.
 
 Compare the final `Raman_tensor_0.00eV` elements and spectra on a **common
 intensity scale**. Keeping the same `band.yaml` removes eigenvector-basis and
-phase differences from this test. To inspect the final Cartesian atomic
-derivatives as well, enable `output.per_atom.enabled` in both runs.
+phase differences from this test. The tutorial's output settings also save raw
+directional derivatives, final Cartesian atomic derivatives, and sampled
+dielectric matrices in both runs.
 
 Reduction and denoising are separate controls. Keep denoising equal in both
 runs to test displacement reduction; set it to `false` in both for an

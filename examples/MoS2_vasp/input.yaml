@@ -20,3 +20,8 @@ symmetry:
 broadening:
   hwhm: 1.0 # cm^-1
   type: lorentzian
+
+output:
+  per_atom:
+    enabled: true # Save final Cartesian atomic derivatives and sampled dielectric matrices
+    raw_directional_derivatives: true # Also save the raw measured-direction responses

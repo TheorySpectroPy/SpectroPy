@@ -1,16 +1,11 @@
 """Measured-direction raw output, with explicit physical units."""
-import json
 from pathlib import Path
 import numpy as np
-from reconstruct_dielectric_derivatives import (
-    fractional_finite_differences, reconstruct_fractional_tensor,
-    expand_to_equivalent_atoms, frac_to_cart_rotation)
-
-SCHEMA = 'spectropy.directional_derivatives.v1'
+from reconstruct_dielectric_derivatives import fractional_finite_differences
 
 
-def directional_document(energy, structure, measurements, sites, mapping, transfers,
-                         scheme='central', equilibrium=None, bases=None):
+def directional_document(energy, structure, measurements, sites,
+                         scheme='central', equilibrium=None):
     lattice = np.asarray(structure.lattice)
     factor = abs(np.linalg.det(lattice)) / (4*np.pi)
     samples = []
@@ -32,61 +27,65 @@ def directional_document(energy, structure, measurements, sites, mapping, transf
                 real=response.real.tolist(), imaginary=response.imag.tolist()))
     if not samples:
         raise ValueError('No measured directional responses')
-    return dict(schema=SCHEMA, energy_eV=float(energy),
+    return dict(energy_eV=float(energy),
         response_units='angstrom^2', dielectric_basis='cartesian',
         displacement_basis='measured unit directions',
         volume_factor_angstrom3=float(factor), difference_scheme=scheme,
         lattice_angstrom=lattice.tolist(), natoms=int(structure.natoms),
-        samples=samples,
-        reconstruction=dict(site_rotations_fractional={str(a):np.asarray(sites.get(a,
-            {'rotations': np.eye(3)[None]})['rotations']).tolist() for a in measurements},
-            atom_mapping={str(a):int(r) for a,r in mapping.items()},
-            transfers_fractional=[dict(representative=int(r), atom=int(a), rotation=np.asarray(t).tolist())
-                                  for (r,a),t in transfers.items()], bases=bases))
+        samples=samples)
 
 
 def save_directional(path, document):
-    Path(path).write_text(json.dumps(document, indent=2, allow_nan=False) + '\n')
+    """Write measured-direction 3x3 matrices, not inferred Cartesian slices."""
+    def numbers(vector):
+        return " ".join(f"{value:.16e}" for value in vector)
 
-
-def reconstruct_directional_file(path, total_atoms):
-    """Reconstruct a debugging export in memory; never save a raw xyz file."""
-    doc = json.loads(Path(path).read_text())
-    if doc.get('schema') != SCHEMA or doc.get('natoms') != total_atoms:
-        raise ValueError('Invalid directional derivative schema or atom count')
-    if doc.get('response_units') != 'angstrom^2':
-        raise ValueError('Unexpected directional response units')
-    lattice = np.asarray(doc['lattice_angstrom'], dtype=float)
-    meta = doc['reconstruction']
-    by_atom = {}
+    lattice = np.asarray(document["lattice_angstrom"], dtype=float)
+    if lattice.shape != (3, 3) or not np.isfinite(lattice).all():
+        raise ValueError("Invalid directional derivative lattice")
+    if document["response_units"] != "angstrom^2":
+        raise ValueError("Unexpected directional derivative units")
+    if not np.isfinite([document["energy_eV"], document["volume_factor_angstrom3"]]).all():
+        raise ValueError("Nonfinite directional derivative metadata")
+    lines = [
+        f"! Raw directional dielectric derivatives at {document['energy_eV']:.16e} eV",
+        "! Matrix basis: Cartesian x,y,z; displacement basis: measured unit directions.",
+        "! Only measured directions are listed; no denoising or equivalent-atom reconstruction.",
+        "! Units: angstrom^2; responses include Vcell/(4*pi).",
+        f"! Volume factor (angstrom^3): {document['volume_factor_angstrom3']:.16e}",
+        f"! Difference scheme: {document['difference_scheme']}",
+        f"! Total atoms: {document['natoms']}",
+        "! Unit cell matrix (row vectors, angstrom):",
+        *["!   " + numbers(row) for row in lattice],
+    ]
     seen = set()
-    for sample in doc['samples']:
-        atom = sample['atom']
-        key = (atom, sample['direction_index'])
-        if key in seen or not 1 <= atom <= total_atoms:
-            raise ValueError('Duplicate or invalid directional sample')
+    for sample in document["samples"]:
+        key = (sample["atom"], sample["direction_index"])
+        if key in seen or not 1 <= key[0] <= document["natoms"] or key[1] < 1:
+            raise ValueError("Duplicate or invalid directional sample")
         seen.add(key)
-        unit = np.asarray(sample['unit_fractional'], dtype=float)
-        cart = unit @ lattice
-        response = np.asarray(sample['real']) + 1j*np.asarray(sample['imaginary'])
-        if (response.shape != (3,3) or not np.isfinite(response).all()
-                or not np.allclose(cart/np.linalg.norm(cart), sample['unit_cartesian'], atol=1e-10)):
-            raise ValueError('Invalid directional response or direction')
-        by_atom.setdefault(atom, []).append((unit, response*np.linalg.norm(cart)))
-    representatives = {}
-    for atom, slices in by_atom.items():
-        bases = meta.get('bases')
-        basis = None if bases is None else bases['atoms'][str(atom)]
-        rotations = np.asarray(meta['site_rotations_fractional'][str(atom)])
-        # The established solver uses real arrays; solve both parts explicitly.
-        real = reconstruct_fractional_tensor([(u,t.real) for u,t in slices], rotations, lattice, basis)
-        imag = reconstruct_fractional_tensor([(u,t.imag) for u,t in slices], rotations, lattice, basis)
-        representatives[atom] = real + 1j*imag
-    mapping = {int(a):r for a,r in meta['atom_mapping'].items()}
-    transfers = {(v['representative'],v['atom']):frac_to_cart_rotation(np.asarray(v['rotation']),lattice)
-                 for v in meta['transfers_fractional']}
-    tensors = expand_to_equivalent_atoms(representatives,mapping,transfers)
-    if set(tensors) != set(range(1,total_atoms+1)):
-        raise ValueError('Directional reconstruction does not cover all atoms')
-    result = np.array([tensors[a].transpose(2,0,1) for a in range(1,total_atoms+1)])
-    return result.real, result.imag
+        arrays = {}
+        for name, shape in (("unit_cartesian", (3,)), ("unit_fractional", (3,)),
+                            ("real", (3, 3)), ("imaginary", (3, 3))):
+            arrays[name] = np.asarray(sample[name], dtype=float)
+            if arrays[name].shape != shape or not np.isfinite(arrays[name]).all():
+                raise ValueError(f"Invalid directional derivative {name}")
+        step = sample["displacement_length_angstrom"]
+        if not np.isfinite(step) or step <= 0:
+            raise ValueError("Displacement length must be finite and positive")
+        lines.extend([
+            "",
+            f"Atom {key[0]} Direction {key[1]}",
+            "! Cartesian unit direction: " + numbers(arrays["unit_cartesian"]),
+            "! Fractional direction: " + numbers(arrays["unit_fractional"]),
+            f"! Displacement length (angstrom): {step:.16e}",
+            f"! Calculated signs: {sample['calculated_signs']}",
+            "! Negative from symmetry: " + str(bool(sample["negative_from_symmetry"])).lower(),
+            "! Real Part",
+            *[numbers(row) for row in arrays["real"]],
+            "! Imaginary Part",
+            *[numbers(row) for row in arrays["imaginary"]],
+        ])
+    if not seen:
+        raise ValueError("No measured directional responses")
+    Path(path).write_text("\n".join(lines) + "\n")

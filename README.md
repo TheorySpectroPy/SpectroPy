@@ -95,6 +95,11 @@ symmetry:
 broadening:
   hwhm: 1.0 # cm^-1
   type: lorentzian
+
+output:
+  per_atom:
+    enabled: true
+    raw_directional_derivatives: true
 ```
 
 Here, the geometry selects xy polarization with surface normal z. The energies
@@ -102,6 +107,8 @@ select static and 1.96 eV responses; `reduction: on`, `cartesian`, and `0.01` se
 symmetry-reduced directions with a 0.01 Å step. Central differences use ± pairs,
 `denoise: true` enables denoising, and Lorentzian peaks have a 1 cm⁻¹ half-width.
 The step is illustrative, not convergence-tested. Each stage reads `input.yaml`.
+The `output` section enables final atomic derivatives, raw measured-direction
+derivatives, and sampled dielectric matrices for inspection.
 
 ### Step 2: Generate Displacements
 
@@ -170,9 +177,13 @@ denoises the atomic derivatives in memory, then contracts them with the
 | Output (`<E>` is the laser energy in eV) | Format and contents |
 | --- | --- |
 | `Raman_tensor_<E>eV` | Text: mode index, frequency, symmetry label, and complex Cartesian 3×3 Raman tensor for each mode. |
+| `epsilon_derivative_<E>` | Text: final denoised Cartesian atomic derivatives, reconstructed for every atom and direction. |
+| `raw_directional_derivative_<E>` | Text: raw real/imaginary 3×3 derivative matrices along measured directions, with displacement and sign metadata. |
+| `dielectric_tensor_<E>` | Text: unprojected real/imaginary dielectric matrices sampled from each calculated signed displacement. |
 
 For this example, the final tensors are `Raman_tensor_0.00eV` and
-`Raman_tensor_1.96eV`. No per-atom intermediate files are written by default.
+`Raman_tensor_1.96eV`. Atomic and dielectric exports are enabled explicitly
+above; without the `output` section, the library default saves only mode tensors.
 
 ### Step 5: Calculate the Final Spectrum
 
