@@ -85,7 +85,7 @@ polarization:
 
 spectrum:
   energies: [0.00, 1.96] # eV
-  temperature: 0 # Kelvin; 0 gives a Stokes Bose factor of 1
+  temperature: 298 # Kelvin; room-temperature Stokes Bose factor (default)
 
 displacements:
   basis: cartesian
