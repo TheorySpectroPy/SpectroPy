@@ -45,21 +45,7 @@ or missing entire off-diagonal pairs still fail. There is no OUTCAR fallback.
 
 ## Workflow & Usage Guide
 
-Follow these steps to calculate a Raman spectrum from a relaxed crystal structure.
-
-```text
-Relaxed structure + Gamma-point phonons
-                 |
-        spectropy displacements
-                 |
-       Run VASP in each directory
-                 |
-         spectropy tensors
-                 |
-          spectropy spectrum
-                 |
-            spectropy plot
-```
+Follow these steps to calculate a Raman spectrum from a relaxed crystal structure and Phonopy output:
 
 ### Step 1: Prepare Your Directory
 
@@ -74,7 +60,7 @@ Create a new directory for your Raman calculation. Inside this directory, you wi
 | `INCAR`, `KPOINTS`, `POTCAR` | VASP inputs to use for the finite displacement calculations. |
 | `input.yaml` | Experimental geometry and SpectroPy settings, as below. |
 
-Keep the calculation settings together in a file named `input.yaml`:
+Keep the calculation settings together in a file named `input.yaml`. Here is an example:
 
 ```yaml
 polarization:
@@ -110,8 +96,7 @@ Here, the geometry selects xy polarization with surface normal z. The energies
 select static and 1.96 eV responses; `reduction: on`, `cartesian`, and `0.01` select
 symmetry-reduced directions with a 0.01 Å step. Central differences use ± pairs,
 `denoise: true` enables denoising, and Lorentzian peaks have a 1 cm⁻¹ half-width.
-The step is illustrative, not convergence-tested. Each stage reads `input.yaml`.
-The `output` section enables final atomic derivatives, raw measured-direction
+Each stage reads `input.yaml`. The `output` section enables final atomic derivatives, raw measured-direction
 derivatives, and sampled dielectric matrices for inspection.
 
 ### Step 2: Generate Displacements
