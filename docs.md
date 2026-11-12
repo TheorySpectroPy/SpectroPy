@@ -17,7 +17,7 @@ optional in SpectroPy. The loader uses only `true` and `false` as boolean words.
 | `polarization.incident` | Required for spectra | Three Cartesian components of the incoming polarization vector. |
 | `polarization.scattered` | Required for spectra | Three Cartesian components of the detected polarization vector. |
 | `polarization.surface_normal` | Required for spectra | Surface-normal axis: `x`, `y`, or `z`. |
-| `spectrum.energies` | `0.00` | One or more photon energies in eV; zero is the static limit. |
+| `spectrum.energies` | `0.00` | A scalar, list, or inclusive `{start, stop, step}` energy range in eV; zero is the static limit. |
 | `symmetry.reduction` | `off` | `on` (minimal), `off` (full), or `atoms` (atoms only); see the selection table below. |
 | `displacements.basis` | `cartesian` | `cartesian` or `fractional` candidate directions. |
 | `displacements.amplitude` | `0.03` | Physical displacement length in Å, in either basis. |
@@ -104,7 +104,17 @@ unqualified `Raman_tensor` alias or raw/corrected spectrum copies are produced.
 
 ## Automating Energy Scans
 
-Request multiple energies in `input.yaml`, then run the analysis once:
+For a regular scan, use an inclusive range in `input.yaml`:
+
+```yaml
+spectrum:
+  energies: {start: 0.0, stop: 4.0, step: 0.1}
+```
+
+This selects 41 energies, including 0.0 and 4.0 eV. Both endpoints must lie
+on the step grid. The step must be positive, and a range is limited to 100000
+values. Expansion avoids cumulative floating-point step drift. For selected
+energies instead, use a list:
 
 ```yaml
 spectrum:
@@ -117,8 +127,11 @@ spectropy spectrum
 spectropy plot
 ```
 
-The nearest tabulated energy is selected without interpolation. Filenames use
-two decimal places; choose energies that remain distinct at that precision.
+The nearest tabulated energy is selected without interpolation; all requested
+energies must lie within the XML grid. Filenames use two decimal places, and
+settings with distinct energies that would overwrite the same filename are
+rejected. The settings writer stores expanded lists, which preserve the same
+energy selection as a range.
 
 ## Displacement Selection and Derivatives
 
@@ -281,4 +294,5 @@ without additional scientific CLI options.
 
 | Example | Starting point |
 | --- | --- |
-| [MoS2](examples/MoS2/README.md) | Minimal Cartesian 0.01 Å benchmark, including optical inputs, phonons, three displaced structures, and complete XML outputs; calculate tensors and spectra without running VASP. |
+| [MoS2_vasp](examples/MoS2_vasp/README.md) | Minimal Cartesian 0.01 Å benchmark with optical inputs, phonons, three displaced structures, XML outputs, and a static Raman spectrum. |
+| [MoS2_qe — WIP](examples/MoS2_qe/README.md) | Documentation starter only; the QE interface and a runnable dataset are not included. |

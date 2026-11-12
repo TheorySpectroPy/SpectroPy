@@ -2,6 +2,11 @@
 
 ## Unreleased — supported workflow simplification
 
+- `spectrum.energies` accepts an inclusive `{start, stop, step}` range as well
+  as an explicit list. Filename collisions at two decimal places are rejected.
+- The verified VASP example is now `examples/MoS2_vasp`, with symmetry-on/off
+  comparison instructions and a generated static spectrum. A separate
+  `MoS2_qe` documentation starter is explicitly marked WIP.
 - Settings are grouped under `polarization`, `spectrum`, `displacements`,
   `symmetry`, `broadening`, `modes`, and `output`. Flat keys are no longer read.
   The fixed XML source no longer needs a setting or a mode-tensor CLI flag.
