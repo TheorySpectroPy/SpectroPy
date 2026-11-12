@@ -25,7 +25,7 @@ optional in SpectroPy. The loader uses only `true` and `false` as boolean words.
 | `symmetry.denoise` | `false` | `true` enables atomic symmetry and reciprocity denoising. |
 | `polarization.mode` | `specific` | `specific` or `average`; the latter sums polarization channels, not a general powder orientational integral. |
 | `spectrum.cutoff` | Unset | Apply the inverse phonon-frequency factor only to positive modes at or above this threshold (cm⁻¹). Unset disables the denominator; modes below the cutoff retain a denominator factor of 1, not zero intensity. |
-| `spectrum.temperature` | `0` | Temperature in kelvin for the independent Stokes Bose factor, applied to all positive-frequency modes regardless of cutoff. At 0 K this factor is 1. Zero/negative-frequency modes receive neither correction. |
+| `spectrum.temperature` | `298` | Temperature in kelvin for the independent Stokes Bose factor, applied to all positive-frequency modes regardless of cutoff. At 0 K this factor is 1. Zero/negative-frequency modes receive neither correction. |
 | `broadening.hwhm` | `1.0` | Half-width at half-maximum in cm⁻¹; FWHM is twice this value. |
 | `broadening.type` | `lorentzian` | `lorentzian` or `gaussian` (also `l` or `g`). |
 | `displacements.equilibrium_file` | Automatic | Optional equilibrium XML path for forward differences; otherwise `displacements/ra_pos_equilibrium/vasprun.xml`. |

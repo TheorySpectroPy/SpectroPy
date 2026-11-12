@@ -3,9 +3,9 @@
 ## Unreleased — supported workflow simplification
 
 - `spectrum.cutoff` now controls only the inverse phonon-frequency factor.
-  Independent `spectrum.temperature` (kelvin, default 0) controls the Stokes
-  Bose factor. Existing inputs relying on the former implicit 298 K weighting
-  must explicitly set `temperature: 298`; the MoS2 tutorial now does so.
+  Independent `spectrum.temperature` (kelvin, default 298) controls the Stokes
+  Bose factor, retaining the former room-temperature choice. Set temperature
+  to 0 for a Bose factor of 1, independently of the frequency denominator.
 
 - Modules now live in the `spectropy` package under `src/spectropy`, with names
   such as `config`, `displacements`, `tensors`, and `spectrum`. CLI commands and

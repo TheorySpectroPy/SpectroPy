@@ -23,7 +23,7 @@ class Settings:
     broadening_type: str = "lorentzian"
     polarization: str = "specific"
     frequency_cutoff_cm1: float | None = None
-    temperature: float = 0.0
+    temperature: float = 298.0
     difference_scheme: str = "central"
     site_symmetry_projection: bool = False
     symmetry: str = "off"
