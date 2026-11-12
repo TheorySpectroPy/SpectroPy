@@ -2,6 +2,13 @@
 
 ## Unreleased — supported workflow simplification
 
+- Raw directional derivatives now use labeled text, `raw_directional_derivative_<E>`,
+  with real/imaginary 3×3 matrices and direction/sign metadata, instead of JSON.
+  The obsolete JSON-to-Cartesian reconstruction helper is removed; spectra
+  continue to consume only final mode tensors.
+- The VASP tutorial enables raw directional derivatives, final denoised atomic
+  derivatives, and sampled dielectric matrices. The per-atom output switch also
+  exports `dielectric_tensor_<E>`; the default remains mode tensors only.
 - `spectrum.energies` accepts an inclusive `{start, stop, step}` range as well
   as an explicit list. Filename collisions at two decimal places are rejected.
 - The verified VASP example is now `examples/MoS2_vasp`, with symmetry-on/off
@@ -16,7 +23,7 @@
   those full-precision tensors to calculate intensities without atomic files.
 - `output.per_atom.enabled` optionally saves the final `epsilon_derivative_<E>`
   field. Its nested `raw_directional_derivatives` option enables measured-basis
-  JSON for debugging. No duplicate corrected field or raw/corrected spectrum
+  text for debugging. No duplicate corrected field or raw/corrected spectrum
   copies are generated; existing outputs are not deleted.
 - SpectroPy settings now use `input.yaml`: native YAML lists, booleans, and
   `#` comments replace the positional/text parser. All stages and examples use

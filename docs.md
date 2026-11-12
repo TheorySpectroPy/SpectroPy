@@ -86,14 +86,26 @@ output:
 
 | Setting | Default | Additional output |
 | --- | --- | --- |
-| `output.per_atom.enabled` | `false` | `epsilon_derivative_<E>`: final real/imaginary Cartesian slices for every atom. |
-| `output.per_atom.raw_directional_derivatives` | `false` | `raw_directional_derivative_<E>.json`: measured directional responses for debugging. Requires `enabled: true`. |
+| `output.per_atom.enabled` | `false` | `epsilon_derivative_<E>`: final real/imaginary Cartesian slices for every atom; `dielectric_tensor_<E>`: the sampled dielectric responses. |
+| `output.per_atom.raw_directional_derivatives` | `false` | `raw_directional_derivative_<E>`: labeled text containing measured directional responses for debugging. Requires `enabled: true`. |
 
 The final per-atom file is denoised when `symmetry.denoise: true`; otherwise it
 contains the unprojected reconstructed field. There is no duplicate
-`corrected_epsilon_derivative` file. The debug JSON preserves measured
-directions, steps, sign provenance, and complex raw responses; it does not
+`corrected_epsilon_derivative` file. The raw text export preserves measured
+directions, steps, sign provenance, and separate real/imaginary 3×3 matrices; it does not
 pretend a mixed displacement is a directly measured Cartesian slice.
+Like the other tensor text outputs, it uses full-precision numerical entries.
+It is an inspection output, not an input to the spectrum stage. Older JSON
+exports are not read or deleted automatically.
+
+`dielectric_tensor_<E>` contains dimensionless Cartesian real/imaginary 3×3
+matrices for each directly calculated signed displacement, with its atom and
+signed Cartesian displacement vector in Å. Forward differences additionally
+include the equilibrium response. These are the nearest-grid XML samples,
+before denoising and without the derivative files' volume factor. All nine
+reader components are written independently at full precision; when a source
+XML prints only six, transpose completion still triggers the usual warning.
+No additional XML reads are needed for this export.
 
 `spectropy spectrum` reads only the final mode tensor files, so per-atom/debug
 exports are never required. Changing denoising or energy settings requires rerunning
@@ -172,9 +184,9 @@ $$
 $$
 
 All dielectric matrix components are Cartesian, even when the displacement
-direction was selected in a fractional basis. Optional debug JSON records preserve these
+direction was selected in a fractional basis. Optional raw text exports preserve these
 directional responses, not a manually selected subset of Cartesian slices.
-With `symmetry.reduction: on`, symmetry may supply the negative sign; the JSON records this.
+With `symmetry.reduction: on`, symmetry may supply the negative sign; the text records this.
 
 ## Symmetry Denoising and Raman Tensors
 

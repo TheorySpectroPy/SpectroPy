@@ -43,11 +43,11 @@ def read_band_yaml(filepath="band.yaml"):
 
 def read_dielectric_derivatives(filepath, total_atoms):
     print(f"Reading atomic Raman tensors from {filepath}...")
-    if str(filepath).endswith('.json'):
-        from spectropy_directional import reconstruct_directional_file
-        return reconstruct_directional_file(filepath, total_atoms)
     with open(filepath, 'r') as f:
         lines = f.readlines()
+    if lines and lines[0].startswith('! Raw directional dielectric derivatives'):
+        raise ValueError('Raw measured-direction derivatives are not a Cartesian atomic field; '
+                         'use the final epsilon_derivative_<E> file for Cartesian contraction')
         
     real_start_idx = -1
     imag_start_idx = -1

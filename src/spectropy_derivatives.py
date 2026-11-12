@@ -15,6 +15,29 @@ from spectropy_directional import directional_document, save_directional
 from reconstruct_dielectric_derivatives import project_crystal_tensor_field
 
 
+def _write_dielectrics(path, target_frequency, measurements, equilibrium=None):
+    """Export sampled signed-displacement responses, without projection/scaling."""
+    with open(path, "w") as output:
+        output.write(f"# Dielectric samples for requested photon energy {target_frequency:.16e} eV\n")
+        output.write("# Nearest XML energy-grid samples; dimensionless Cartesian x,y,z matrices.\n")
+        output.write("# No denoising or volume factor is applied. All nine reader components are retained.\n")
+
+        def block(label, direction, real, imaginary):
+            output.write(f"\n{label}\n")
+            output.write("# signed_displacement_cartesian_angstrom "
+                         + " ".join(f"{value:.16e}" for value in direction) + "\n")
+            for name, matrix in (("Real", real), ("Imaginary", imaginary)):
+                output.write(f"# {name}\n")
+                for row in matrix:
+                    output.write(" ".join(f"{value:.16e}" for value in row) + "\n")
+
+        if equilibrium is not None:
+            block("Equilibrium", np.zeros(3), *equilibrium)
+        for atom, samples in measurements.items():
+            for index, (direction, real, imaginary) in enumerate(samples, 1):
+                block(f"Atom {atom} Sample {index}", direction, real, imaginary)
+
+
 def _write_derivatives(path, target_frequency, lattice, positions, real_tensors, imaginary_tensors):
     factor = np.linalg.det(lattice) / (4 * np.pi)
     with open(path, "w") as output:
@@ -40,7 +63,9 @@ def write_derivative_outputs(energy, structure, final, directory=".", *, directi
                        structure.fractional_positions, *final)
     print(f"Wrote {name}")
     if directional is not None:
-        save_directional(os.path.join(directory, f"raw_directional_derivative_{energy:.2f}.json"), directional)
+        name = f"raw_directional_derivative_{energy:.2f}"
+        save_directional(os.path.join(directory, name), directional)
+        print(f"Wrote {name}")
 
 
 def run_derivatives(input_path=DEFAULT_INPUT, use_saved_basis=None,
@@ -109,10 +134,8 @@ def run_derivatives(input_path=DEFAULT_INPUT, use_saved_basis=None,
         directional = None
         if settings.raw_directional_derivatives:
             sites = site_symmetries if mode != 'full' else {}
-            mapping = atom_mapping if mode != 'full' else {a:a for a in measurements}
-            transfers = mapping_matrices if mode != 'full' else {}
             directional = directional_document(energy, structure, measurements, sites,
-                mapping, transfers, difference_scheme, equilibrium, bases)
+                difference_scheme, equilibrium)
         if site_projection and mode=='full':
             raw=reconstruct(False)
             field=np.array([raw[0][a]+1j*raw[1][a] for a in range(1,structure.natoms+1)])
@@ -126,3 +149,6 @@ def run_derivatives(input_path=DEFAULT_INPUT, use_saved_basis=None,
             on_reconstructed(energy, structure, final)
         if settings.per_atom_output:
             write_derivative_outputs(energy, structure, final, directional=directional)
+            name = f"dielectric_tensor_{energy:.2f}"
+            _write_dielectrics(name, energy, measurements, equilibrium)
+            print(f"Wrote {name}")
