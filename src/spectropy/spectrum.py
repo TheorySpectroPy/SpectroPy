@@ -157,13 +157,18 @@ def write_intensities(energy, frequencies, tensors, labels, input_path=DEFAULT_I
         average = np.sum(np.abs(tensors[:, axes][:, :, axes])**2, axis=(1, 2))
     freq_cm1 = frequencies * THZ_TO_CM1
     cutoff = settings.frequency_cutoff_cm1
+    factor = np.ones_like(frequencies, dtype=float)
     if cutoff is not None:
         selected = (frequencies > 0.0) & (freq_cm1 >= cutoff)
-        occupation = 1.0 / (np.exp(freq_cm1[selected] * 0.004824125) - 1.0)
-        factor = (occupation + 1.0) / frequencies[selected]
-        intensities[selected] *= factor
-        if average is not None:
-            average[selected] *= factor
+        factor[selected] /= frequencies[selected]
+    if settings.temperature > 0:
+        positive = frequencies > 0.0
+        # hc/k_B in cm K; stable Stokes n+1, including the low-T limit.
+        exponent = freq_cm1[positive] * 1.4387768775039338 / settings.temperature
+        factor[positive] /= -np.expm1(-exponent)
+    intensities *= factor
+    if average is not None:
+        average *= factor
     outputs = {"complex": intensities}
     if average is not None:
         outputs["polarization_averaged"] = average

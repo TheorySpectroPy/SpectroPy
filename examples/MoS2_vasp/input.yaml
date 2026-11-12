@@ -6,7 +6,8 @@ polarization:
 
 spectrum:
   energies: [0.00] # eV; static response for the basic demonstration
-  cutoff: 0 # Apply the benchmark's Bose/phonon-frequency factor to positive modes
+  cutoff: 0 # Apply the frequency denominator to positive modes
+  temperature: 298 # Kelvin; Stokes Bose factor
 
 displacements:
   basis: cartesian

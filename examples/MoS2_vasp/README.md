@@ -28,36 +28,26 @@ spectropy spectrum
 spectropy plot
 ```
 
-| Command | Output at 0.00 eV |
-| --- | --- |
-| `tensors` | `Raman_tensor_0.00eV`: final complex Cartesian mode tensors, plus the atomic and dielectric outputs below. |
-| `spectrum` | `Raman_intensity_complex_0.00eV` for xx polarization; `Raman_intensity_polarization_averaged_0.00eV` for the in-plane channel sum. |
-| `plot` | PNG spectra and the unnormalized two-column broadened xx spectrum. |
+| Command | Output at 0.00 eV | Contents |
+| --- | --- | --- |
+| `tensors` | `Raman_tensor_0.00eV` | Final complex Cartesian mode tensors. |
+| `tensors` | `raw_directional_derivative_0.00` | Raw real/imaginary atomic derivative matrices along measured unit directions, with step lengths and whether symmetry supplied the opposite sign. |
+| `tensors` | `epsilon_derivative_0.00` | Denoised and reconstructed atomic derivatives: real/imaginary Cartesian x, y, z slices for every atom. |
+| `tensors` | `dielectric_tensor_0.00` | Sampled, unprojected real/imaginary Cartesian dielectric matrices for each directly calculated signed displacement. |
+| `spectrum` | `Raman_intensity_complex_0.00eV` | xx-polarized mode intensities. |
+| `spectrum` | `Raman_intensity_polarization_averaged_0.00eV` | In-plane polarization-channel sum. |
+| `plot` | PNG spectra and broadened spectrum text | Plot images and the unnormalized two-column broadened xx spectrum. |
 
 `input.yaml` selects central differences, symmetry reduction and denoising,
-and Lorentzian HWHM 1 cm⁻¹. `spectrum.cutoff: 0` retains the benchmark's
-Bose/phonon-frequency factor for positive-frequency modes. This tutorial also
-enables the optional atomic and dielectric exports:
-
-```yaml
-output:
-  per_atom:
-    enabled: true
-    raw_directional_derivatives: true
-```
-
-| Additional `spectropy tensors` output | Contents |
-| --- | --- |
-| `raw_directional_derivative_0.00` | Labeled text: raw real/imaginary per-atom derivative matrices along the measured unit directions, including step lengths and whether symmetry supplied the opposite sign. |
-| `epsilon_derivative_0.00` | Final **denoised and reconstructed** atomic derivatives: real/imaginary Cartesian x, y, z slices for every atom. |
-| `dielectric_tensor_0.00` | Sampled, unprojected real/imaginary Cartesian dielectric matrices for each directly calculated signed displacement. |
+and Lorentzian HWHM 1 cm⁻¹. `spectrum.cutoff: 0` enables the frequency denominator;
+`spectrum.temperature: 298` independently enables the room-temperature Stokes
+Bose factor for positive-frequency modes.
 
 Atomic derivative exports include $V_{\rm cell}/(4\pi)$ and have units of Å²;
 the sampled dielectric matrices are dimensionless and have no volume factor.
 The raw derivatives retain the **measured mixed-direction basis**, not inferred
 Cartesian slices or equivalent atoms. All nine dielectric components are retained
-independently in this example. These exports are enabled here for inspection;
-the library default still saves only the final mode tensors.
+independently in this example.
 See [Advanced Usage](../../docs.md) for formats and optional settings.
 
 ### Static spectrum
@@ -77,6 +67,7 @@ range:
 spectrum:
   energies: {start: 0.0, stop: 4.0, step: 0.1}
   cutoff: 0
+  temperature: 298
 ```
 
 This selects 41 energies. Rerun `spectropy tensors`, `spectropy spectrum`, and
