@@ -87,7 +87,7 @@ From the repository root:
 mkdir MoS2_new
 cp examples/MoS2_vasp/{CONTCAR,INCAR,KPOINTS,band.yaml,irreps.yaml,symmetry,input.yaml} MoS2_new/
 cd MoS2_new
-# Supply your own licensed POTCAR: Mo_pv, then S, as specified below.
+# Supply your own licensed POTCAR: Mo_pv, then S.
 spectropy displacements
 ```
 
@@ -96,6 +96,9 @@ SpectroPy generates the displaced POSCARs and symlinks supplied `INCAR`,
 own local or cluster launcher in **every generated** `displacements/ra_pos_atom*/`
 directory. These are optical single-point calculations: keep `NSW=0` and do
 not relax the displacements.
+
+To match this example, use PAW_PBE Mo_pv 04Feb2005 followed by S 06Sep2000
+when assembling your `POTCAR`.
 
 Check electronic convergence, successful completion, and the dielectric data
 in each `vasprun.xml`; a parseable XML file alone does not prove convergence.
@@ -139,23 +142,3 @@ Exact numerical equality is not guaranteed at finite displacement. Differences
 can expose electronic noise or finite-step error; denoising cannot remove
 symmetry-allowed errors. The full benchmark XMLs are not bundled here, so this
 section describes how to run the comparison rather than asserting agreement.
-
-## Provenance and calculation settings
-
-Source dataset: `MoS2_benchmark/MoS2_PBESol_minimal_Cartesian_d0.01/raman`,
-completed 5 November 2026. Structures, phonons, symmetry, displacement metadata,
-and XML files are copied without alteration. The grouped `input.yaml` retains
-the benchmark's analysis choices, selecting only 0.00 eV for this demonstration.
-These settings are not a general convergence recommendation.
-
-| Optical setting | Value |
-| --- | --- |
-| VASP | 6.4.3, build 26 August 2026 |
-| Functional | PBEsol (`GGA=PS`) |
-| Potentials | PAW_PBE Mo_pv 04Feb2005 (12 valence electrons), S 06Sep2000 (6 each) |
-| `ENCUT`, `NBANDS` | 400 eV, 64 |
-| K-point mesh | Γ-centered 24×24×1 |
-| `EDIFF`, `ISMEAR`, `SIGMA` | 10⁻⁸ eV, 0, 0.01 eV |
-| `ISTART`, `ICHARG`, `ISYM` | 0, 2, −1 |
-| `NSW`, `LOPTICS` | 0, true |
-| `NEDOS`, `OMEGAMAX` | 50001 requested, 50 eV |
