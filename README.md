@@ -210,4 +210,12 @@ If you use **SpectroPy** in your research, please cite our paper:
   doi = {10.1021/acsami.5c20316},
   url = {[https://doi.org/10.1021/acsami.5c20316](https://doi.org/10.1021/acsami.5c20316)}
 }
+```
 
+---
+## Contact
+
+If you have any questions, feedback, or run into any issues while using **SpectroPy** feel free to reach out to us:
+
+- **GitHub Issues:** [Open an issue](../../issues) on this repository for bug reports, feature requests, or workflow questions.
+- **Email:** Contact Dr. Liangbo Liang at [liangl1@ornl.gov](mailto:liangl1@ornl.gov) for any inquiries.
