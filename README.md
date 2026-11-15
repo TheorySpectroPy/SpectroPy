@@ -195,18 +195,20 @@ If you use **SpectroPy** in your research, please cite our paper:
 
 > **Raman Digital Twin of Monolayer Janus Transition Metal Dichalcogenides**
 > *Johnathan Kowalski and Liangbo Liang*
-> *ACS Applied Materials & Interfaces*, **2025**, *Article ASAP*
+> *ACS Applied Materials & Interfaces*, **2026**, *18* (3), 5697–5707
 > **DOI:** [10.1021/acsami.5c20316](https://doi.org/10.1021/acsami.5c20316)
 
 ### BibTeX
 
 ```bibtex
-@article{SpectroPy_Janus2025,
+@article{SpectroPy_Janus2026,
   author = {Kowalski, Johnathan and Liang, Liangbo},
   title = {Raman Digital Twin of Monolayer Janus Transition Metal Dichalcogenides},
   journal = {ACS Applied Materials \& Interfaces},
-  year = {2025},
-  note = {Article ASAP},
+  year = {2026},
+  volume = {18},
+  number = {3},
+  pages = {5697--5707},
   doi = {10.1021/acsami.5c20316},
   url = {[https://doi.org/10.1021/acsami.5c20316](https://doi.org/10.1021/acsami.5c20316)}
 }
