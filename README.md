@@ -254,3 +254,12 @@ If you use **SpectroPy** in your research, please cite our paper:
 ## License
 
 SpectroPy is released under the [MIT License](LICENSE).
+
+---
+
+## Contact
+
+If you have any questions, feedback, or run into any issues while using **SpectroPy** feel free to reach out to us:
+
+- **GitHub Issues:** [Open an issue](../../issues) on this repository for bug reports, feature requests, or workflow questions.
+- **Email:** Contact Dr. Liangbo Liang at [liangl1@ornl.gov](mailto:liangl1@ornl.gov) for any inquiries.
