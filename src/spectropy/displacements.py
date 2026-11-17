@@ -305,7 +305,6 @@ def run_displacements(
     if settings.difference_scheme == 'forward':
         directories.append(root / 'ra_pos_equilibrium')
     link_vasp_inputs(directories)
-    write_structure("ref_poscar.vasp", structure)
     write_displacements("displacements.dat", displacements, structure, _header(mode, basis))
     if mode == "minimal" and settings.saved_basis:
         bases = build_fractional_bases(read_displacements("displacements.dat"), structure.lattice, read_site_symmetries(symmetry_path))

@@ -37,7 +37,7 @@ def allowed_tensor_dimension(representations, rotations, tolerance=1e-7):
 def _reference(reference):
     if reference:
         return reference
-    return "ref_poscar.vasp" if Path("ref_poscar.vasp").exists() else "CONTCAR"
+    return "CONTCAR"
 
 
 def generate(q=None, modes=None, reference=None,

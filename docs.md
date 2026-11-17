@@ -21,8 +21,8 @@ it is **not** the Raman displacement-cell size. For example, `4 4 1` uses
 48-atom force calculations but produces nine Gamma modes for the three-atom
 MoS₂ reference cell. Use `1 1 1` only if the force calculation used no enlargement.
 
-The Gamma-to-Gamma path writes a compact `band.yaml` with two identical
-q-points; SpectroPy reads the first. `--eigvecs` is essential; band labels and
+The Gamma-to-Gamma path writes a Gamma-only `band.yaml`;
+SpectroPy reads the first q-point. `--eigvecs` is essential; band labels and
 a plotted dispersion are not. `--qpoints="0 0 0"` writes `qpoints.yaml`, which
 is **not** a substitute for `band.yaml`. See Phonopy's
 [output formats](https://phonopy.github.io/phonopy/output-files.html) and

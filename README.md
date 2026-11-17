@@ -89,16 +89,15 @@ Run these commands in your completed phonon-force calculation directory
 ```bash
 phonon_dim="4 4 1"  # Use the same dimensions as when generating the force displacements
 
-# Collect VASP forces -> FORCE_SETS. List EVERY displacement XML in
-# phonopy_disp.yaml record order; replace these example paths with yours.
-phonopy -f hf_POSCAR-001/vasprun.xml hf_POSCAR-002/vasprun.xml
+# Collect VASP forces -> FORCE_SETS (zero-padded displacement directories).
+phonopy -f hf_POSCAR-*/vasprun.xml
 
 # Generates file describing crystal symmetry of the reference cell
 phonopy -c CONTCAR --symmetry > symmetry
 
 # Gamma-point frequencies and eigenvectors -> band.yaml
 phonopy -c CONTCAR --dim="$phonon_dim" \
-  --band="0 0 0 0 0 0" --band-points=2 --eigvecs
+  --band="0 0 0 0 0 0" --band-points=1 --eigvecs
 
 # Optional Gamma-point mode labels for plotting purposes -> irreps.yaml
 phonopy -c CONTCAR --dim="$phonon_dim" --irreps="0 0 0"
@@ -119,7 +118,6 @@ The generated output files have this layout (`...` represents other displacement
 ```text
 calculation/
 ├── displacements.dat
-├── ref_poscar.vasp
 └── displacements/
     ├── ra_pos_atom1a/
     │   ├── POSCAR
@@ -132,7 +130,7 @@ calculation/
 | File | Format and contents |
 | --- | --- |
 | `displacements.dat` | Plain text: selection metadata, atom indices, and fractional displacement vectors. |
-| `ref_poscar.vasp`, `POSCAR` | VASP structure format: equilibrium reference or individual displaced structures. |
+| `POSCAR` | VASP structure format: individual displaced structures. |
 | `INCAR`, `KPOINTS`, `POTCAR` | Symlinks to your shared optical inputs, not copies. |
 
 ### Step 3: Run VASP

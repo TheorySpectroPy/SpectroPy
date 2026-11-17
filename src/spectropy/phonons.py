@@ -93,12 +93,10 @@ def read_registered_modes(path="band.yaml", reference=None, provenance=None):
     """Require geometry registration before any atomic-response contraction."""
     path = Path(path)
     if reference is None:
-        reference = path.parent / "ref_poscar.vasp"
-        if not reference.is_file():
-            reference = path.parent / "CONTCAR"
+        reference = path.parent / "CONTCAR"
     reference = Path(reference)
     if not reference.is_file():
-        raise FileNotFoundError("Atom registration requires ref_poscar.vasp or an explicit derivative reference")
+        raise FileNotFoundError("Atom registration requires CONTCAR or an explicit derivative reference")
     phonons = read_gamma_modes(path, complex_eigenvectors=True)
     aligned, mapping, shift, error = align_mode_atoms(phonons, read_structure(reference), path)
     if provenance is not None:

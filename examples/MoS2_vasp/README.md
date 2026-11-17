@@ -1,20 +1,30 @@
 # MoS₂: VASP
 
-This example uses **3 atomic displacements versus 10 central-difference mode
-displacements**—70% fewer displaced-structure calculations for this MoS₂ cell.
-The three atomic structures are Mo(+), S(+), and S(−); symmetry supplies the
-missing Mo(−) response. SpectroPy reconstructs the remaining directions and equivalent atoms,
-denoises the atomic responses, and calculates the mode Raman tensors.
-The savings depend on the structure's retained symmetry, not just its size.
+This tutorial provides a relaxed **1×1 monolayer MoS₂ cell** containing one Mo
+and two S atoms, together with calculated phonons and VASP dielectric responses,
+to compute Raman tensors and an **xx-polarized Raman spectrum** using SpectroPy.
 
-The mode baseline counts both partners of $E''$ and $E'$, plus $A_1'$:
-$2+2+1=5$ Raman-active optical modes, each displaced with both signs:
-$5\times2=10$ central-difference structures. This counts all Raman polarizations;
-for xx alone, $E''$ is invisible and the mode baseline is 6 structures instead.
+Monolayer MoS₂ consists of a molybdenum layer between two sulfur layers and has
+$D_{3h}$ symmetry. Its three-atom cell has nine vibrational modes at Gamma.
+Before considering polarization, **five optical modes are Raman-active**:
+the two partners of $E''$, the two partners of $E'$, and the single $A_1'$ mode.
+In the xx geometry used here, the $E'$ and $A_1'$ modes contribute to the spectrum.
 
-The **minimal Cartesian, 0.01 Å PBEsol benchmark** includes the calculated
-structures, phonons, and complete dielectric XML outputs. You can analyze
-these immediately **without running VASP**, or generate your own outputs below.
+Calculating all five Raman-active modes with central differences would require
+**10 displaced structures**, one positive and one negative displacement per mode.
+SpectroPy instead uses atomic displacements and crystal symmetry to generate
+**only 3 displaced structures—a 70% reduction**: one Mo displacement and a
+positive/negative pair for one S atom. Symmetry supplies the opposite Mo response
+and the remaining atomic derivatives. SpectroPy then denoises the derivatives
+and combines them with the phonon eigenvectors to obtain the Raman tensors.
+For an xx-only mode calculation, the comparison is 3 versus 6 structures,
+since the $E''$ pair does not contribute.
+
+The tutorial includes the relaxed structure, phonon files, SpectroPy settings,
+VASP input templates, and completed dielectric outputs. You can calculate the
+tensors and spectrum immediately **without running VASP**, or follow the later
+sections to generate your own outputs and compare symmetry reduction on and off.
+
 
 ## Analyze the supplied VASP outputs
 
@@ -28,18 +38,11 @@ spectropy spectrum
 spectropy plot
 ```
 
-| Command | Output at 0.00 eV | Contents |
-| --- | --- | --- |
-| `tensors` | `Raman_tensor_0.00eV` | Final complex Cartesian mode tensors. |
-| `tensors` | `raw_directional_derivative_0.00` | Raw real/imaginary atomic derivative matrices along measured unit directions, with step lengths and whether symmetry supplied the opposite sign. |
-| `tensors` | `epsilon_derivative_0.00` | Denoised and reconstructed atomic derivatives: real/imaginary Cartesian x, y, z slices for every atom. |
-| `tensors` | `dielectric_tensor_0.00` | Sampled, unprojected real/imaginary Cartesian dielectric matrices for each directly calculated signed displacement. |
-| `spectrum` | `Raman_intensity_complex_0.00eV` | xx-polarized mode intensities. |
-| `spectrum` | `Raman_intensity_polarization_averaged_0.00eV` | In-plane polarization-channel sum. |
-| `plot` | PNG spectra and broadened spectrum text | Plot images and the unnormalized two-column broadened xx spectrum. |
+See the [main workflow guide](../../README.md#step-4-calculate-raman-tensors)
+for descriptions of the generated files.
 
 `input.yaml` selects central differences, symmetry reduction and denoising,
-and Lorentzian HWHM 1 cm⁻¹. `spectrum.cutoff: 0` enables the frequency denominator;
+xx polarization, and Lorentzian HWHM 1 cm⁻¹. `spectrum.cutoff: 0` enables the frequency denominator;
 `spectrum.temperature: 298` independently enables the room-temperature Stokes
 Bose factor for positive-frequency modes.
 
@@ -95,8 +98,25 @@ instead of copying the old phonon files.
 SpectroPy generates the displaced POSCARs and symlinks supplied `INCAR`,
 `KPOINTS`, and `POTCAR` into each calculation directory. Run VASP through your
 own local or cluster launcher in **every generated** `displacements/ra_pos_atom*/`
-directory. These are optical single-point calculations: keep `NSW=0` and do
-not relax the displacements.
+directory.
+
+Suggestions for displaced optical calculations:
+
+- **Disable VASP symmetry:** use `ISYM=-1`. SpectroPy handles displacement
+  reduction and reconstruction separately. See [VASP's symmetry settings](https://vasp.at/wiki/ISYM).
+- **Start each calculation fresh:** set `ISTART=0` and `ICHARG=2` so VASP does
+  not read `WAVECAR` or `CHGCAR`. `LWAVE` and `LCHARG` only control writing
+  those files, not reading them. See [ISTART](https://vasp.at/wiki/ISTART)
+  and [ICHARG](https://vasp.at/wiki/ICHARG).
+- **Calculate the optical response:** use `LOPTICS=.TRUE.` and enough empty
+  bands (`NBANDS`) to converge the dielectric response over your energy range.
+  The supplied input uses `NBANDS=64`; this is a starting point for this cell,
+  not a universal value. See [VASP's optical-calculation guidance](https://vasp.at/wiki/LOPTICS).
+- **Keep the displacements fixed:** use `NSW=0`; do not relax the displaced structures.
+- **Control numerical noise:** keep the same potentials, k-point mesh, cutoff,
+  smearing, and optical settings for every displacement. Use tight electronic
+  convergence (the supplied input uses `EDIFF=1E-08`) and check convergence
+  with respect to k-points, `ENCUT`, and `NBANDS`.
 
 To match this example, use PAW_PBE Mo_pv 04Feb2005 followed by S 06Sep2000
 when assembling your `POTCAR`.
