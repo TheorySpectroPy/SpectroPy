@@ -178,26 +178,42 @@ see [Advanced Usage](docs.md).
 Try the [MoS2_vasp example](examples/MoS2_vasp/README.md) to analyze bundled
 VASP outputs, generate your own calculations, or compare symmetry on and off.
 
-## Visualize Phonon Modes in VESTA
+## Additional Utilities
+
+### Visualizing Phonon Modes
+
+This script generates files to visualize the atomic motion of each phonon mode in either **VMD** or **VESTA**.
 
 Use `CONTCAR` and a matching `band.yaml` containing Γ-point eigenvectors.
-Open `CONTCAR` in VESTA and use **File → Save As** to save `template.vesta`
-in the same directory. Then run:
+
+#### For VESTA (Recommended):
+
+1. Open your `CONTCAR` file in **VESTA**.
+2. Save the file as a VESTA project file (e.g., `template.vesta`) in your working directory.
+
+#### Run the script:
 
 ```bash
 python -m spectropy.visualization
 ```
 
-| Prompt | Example response |
-| --- | --- |
-| Arrow scaling factor | `0.5` |
-| Output format | `e` (VESTA) |
-| Template file | `template.vesta` |
-| Visualize in a supercell? | `no` |
+#### Answer the prompts:
 
-Open the generated `VESTA_MODES/mode_*.vesta` files in VESTA to view each
-mode's displacement arrows. Filenames include the mode number and frequency.
-For VMD output and other options, see [Mode visualization](docs.md#visualizing-phonon-modes).
+- **Arrow scaling factor:** A number to control the arrow length (e.g., `0.5`). A negative value can be used to reverse the arrow direction.
+- **Select output format:** Type `e` for **VESTA**, `v` for **VMD**, or `b` for **Both**.
+- **Enter template file:** (If you chose VESTA) Type the name of the file you saved above (e.g., `template.vesta`).
+- **Visualize in a supercell?** Type `no` to use the original cell.
+
+#### Output
+
+The script will generate new folders (`VESTA_MODES` and/or `VMD_MODES`) containing the visualization files for each mode.
+
+- **`.vesta` files:** Open these in **VESTA** to see the structure and arrows automatically.
+- **`.vmd` files:** Open **VMD**, go to `Extensions > Tk Console`, and type:
+  ```tcl
+  source VMD_MODES/mode_001.vmd
+  ```
+  to load the arrows for mode 1.
 
 ## Citation
 
