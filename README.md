@@ -14,7 +14,7 @@ A Python toolkit for simulating Raman spectra from first-principles calculations
 
 ## Requirements and Installation
 
-Before you begin, ensure you have the following installed and available:
+Before you begin, ensure you have the following software installed and available:
 
 | Requirement | Purpose |
 | --- | --- |
@@ -93,42 +93,28 @@ phonon_dim="4 4 1"  # Use the same dimensions as when generating the force displ
 # phonopy_disp.yaml record order; replace these example paths with yours.
 phonopy -f hf_POSCAR-001/vasprun.xml hf_POSCAR-002/vasprun.xml
 
-# Crystal symmetry of the Raman reference cell; no force constants needed.
+# Generates file describing crystal symmetry of the reference cell
 phonopy -c CONTCAR --symmetry > symmetry
 
 # Gamma-point frequencies and eigenvectors -> band.yaml
 phonopy -c CONTCAR --dim="$phonon_dim" \
   --band="0 0 0 0 0 0" --band-points=2 --eigvecs
 
-# Optional Gamma-point mode labels -> irreps.yaml
+# Optional Gamma-point mode labels for plotting purposes -> irreps.yaml
 phonopy -c CONTCAR --dim="$phonon_dim" --irreps="0 0 0"
 ```
 
 Place `band.yaml`, `symmetry`, and optional `irreps.yaml` beside `CONTCAR`
-and `input.yaml` in your Raman directory. See [Phonopy details](docs.md#phonopy-inputs-and-export-details)
-for cell matching and alternative workflows.
+and `input.yaml` in your Raman directory. 
 
 ### Step 2: Generate Displacements
-
-Choose one `reduction` entry in the `symmetry` section. For this workflow, keep
-`on` enabled; switch to `off` when debugging or comparing unreduced results.
-
-```yaml
-symmetry:
-  # reduction: off # Debugging: all atoms, three basis axes
-  reduction: on    # Demonstration: symmetry-reduced atoms and directions
-  denoise: true
-```
-
-Then generate the structures:
+In the same directory as `CONTCAR`, `input.yaml`, and `symmetry`, run
 
 ```bash
 spectropy displacements
 ```
 
-**Input**: `CONTCAR`, `input.yaml`, and `symmetry` for the reduced example above.
-
-The main generated files have this layout (`...` represents other displacements):
+The generated output files have this layout (`...` represents other displacements):
 
 ```text
 calculation/
@@ -163,7 +149,8 @@ spectropy tensors
 ```
 
 SpectroPy reads the dielectric responses, reconstructs and denoises the atomic
-derivatives, and contracts them with the phonon eigenvectors.
+derivatives, and contracts them with the phonon eigenvectors. It generates the following
+output files: 
 
 | Output (`<E>` is the laser energy in eV) | Format and contents |
 | --- | --- |
@@ -173,14 +160,12 @@ derivatives, and contracts them with the phonon eigenvectors.
 | `dielectric_tensor_<E>` | Text: unprojected real/imaginary dielectric matrices sampled from each calculated signed displacement. |
 
 ### Step 5: Calculate the Final Spectrum
+Using these output files and the input settings, Spectropy computes the Raman spectrum intensites for each mode and can plot them: 
 
 ```bash
 spectropy spectrum
 spectropy plot
 ```
-
-The spectrum stage reads the final Raman tensors and applies the polarization
-settings. Change polarization and rerun this stage without reprocessing XML.
 
 | Output (`<E>` is the laser energy in eV) | Contents |
 | --- | --- |
