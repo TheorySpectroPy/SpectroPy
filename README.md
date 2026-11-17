@@ -170,7 +170,7 @@ spectropy plot
 | `Raman_intensity_complex_<E>eV` | Frequencies, intensities, and available symmetry labels for the chosen polarization. |
 | `Raman_intensity_complex_broadening_<E>eV` | Unnormalized, two-column broadened spectrum. |
 
-![Example Raman Spectrum Plot](docs/images/Raman_plot_MoS2.png)
+![MoS₂ static xx Raman spectrum: minimal Cartesian 0.01 Å displacements with denoising](examples/MoS2_vasp/Raman_0.00eV_xx.png)
 
 For the full settings reference, reconstruction equations, and other options,
 see [Advanced Usage](docs.md).
