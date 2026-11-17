@@ -17,8 +17,6 @@ SpectroPy instead uses atomic displacements and crystal symmetry to generate
 positive/negative pair for one S atom. Symmetry supplies the opposite Mo response
 and the remaining atomic derivatives. SpectroPy then denoises the derivatives
 and combines them with the phonon eigenvectors to obtain the Raman tensors.
-For an xx-only mode calculation, the comparison is 3 versus 6 structures,
-since the $E''$ pair does not contribute.
 
 The tutorial includes the relaxed structure, phonon files, SpectroPy settings,
 VASP input templates, and completed dielectric outputs. You can calculate the
