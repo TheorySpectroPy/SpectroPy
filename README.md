@@ -178,7 +178,26 @@ see [Advanced Usage](docs.md).
 Try the [MoS2_vasp example](examples/MoS2_vasp/README.md) to analyze bundled
 VASP outputs, generate your own calculations, or compare symmetry on and off.
 
-For phonon animations, see [Mode visualization](docs.md#visualizing-phonon-modes).
+## Visualize Phonon Modes in VESTA
+
+Use `CONTCAR` and a matching `band.yaml` containing Γ-point eigenvectors.
+Open `CONTCAR` in VESTA and use **File → Save As** to save `template.vesta`
+in the same directory. Then run:
+
+```bash
+python -m spectropy.visualization
+```
+
+| Prompt | Example response |
+| --- | --- |
+| Arrow scaling factor | `0.5` |
+| Output format | `e` (VESTA) |
+| Template file | `template.vesta` |
+| Visualize in a supercell? | `no` |
+
+Open the generated `VESTA_MODES/mode_*.vesta` files in VESTA to view each
+mode's displacement arrows. Filenames include the mode number and frequency.
+For VMD output and other options, see [Mode visualization](docs.md#visualizing-phonon-modes).
 
 ## Citation
 
