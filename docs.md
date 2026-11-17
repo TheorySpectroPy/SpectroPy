@@ -1,5 +1,7 @@
 # SpectroPy Advanced Usage
 
+> **Work in progress:** This documentation is being revised and may be incomplete or outdated. Start with the [README](README.md) for the basic workflow.
+
 See the [basic workflow](README.md#workflow--usage-guide) for a short introduction.
 
 ## Phonopy inputs and export details
