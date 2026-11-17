@@ -2,6 +2,80 @@
 
 See the [basic workflow](README.md#workflow--usage-guide) for a short introduction.
 
+## Phonopy inputs and export details
+
+Phonopy reads `FORCE_SETS` and builds the force constants internally for the
+band and irrep calculations. Our workflow does not require a saved
+`FORCE_CONSTANTS` file or `--readfc`. These XMLs must contain converged forces
+for the original Phonopy displacements, not an unrelated Raman displacement set.
+See the [Phonopy force-calculation instructions](https://phonopy.github.io/phonopy/vasp.html).
+
+For the **combined HF/Raman workflow**, replace the `phonopy -f` command with
+`phonopy --fz`, listing the undisplaced equilibrium XML **first**, followed by
+every displaced XML in `phonopy_disp.yaml` order. This subtracts equilibrium
+forces before writing `FORCE_SETS`; the band and irrep commands remain the same.
+
+`-c CONTCAR` specifies the **reference cell**, not the enlarged force-calculation
+`SPOSCAR`. `--dim` specifies the enlargement used for those force constants;
+it is **not** the Raman displacement-cell size. For example, `4 4 1` uses
+48-atom force calculations but produces nine Gamma modes for the three-atom
+MoS₂ reference cell. Use `1 1 1` only if the force calculation used no enlargement.
+
+The Gamma-to-Gamma path writes a compact `band.yaml` with two identical
+q-points; SpectroPy reads the first. `--eigvecs` is essential; band labels and
+a plotted dispersion are not. `--qpoints="0 0 0"` writes `qpoints.yaml`, which
+is **not** a substitute for `band.yaml`. See Phonopy's
+[output formats](https://phonopy.github.io/phonopy/output-files.html) and
+[band settings](https://phonopy.github.io/phonopy/setting-tags.html#band-structure-tags).
+
+Copy `band.yaml`, `symmetry`, and (if generated) `irreps.yaml` alongside the
+same `CONTCAR` in the Raman directory. SpectroPy does **not** need `FORCE_SETS`,
+`FORCE_CONSTANTS`, or the force-job XMLs for the atomic workflow shown here.
+`phonopy_disp.yaml` is only needed when explicitly importing Phonopy's
+displacements, not when SpectroPy generates its own displacements.
+
+
+## Installation and dielectric compatibility
+
+After updating an older checkout, reinstall to refresh the command entry point.
+The library is now a `spectropy` package; `python -m spectropy` runs the same CLI.
+
+The dielectric reader accepts complete `vasprun.xml` files with either nine
+components or the standard six-component dielectric format. All printed entries
+are preserved independently. If transpose components are missing, SpectroPy
+warns and fills them by reciprocity (for example, $\epsilon_{yx}=\epsilon_{xy}$,
+without complex conjugation). These entries are inferred, not measured; this
+cannot recover a nonreciprocal response. Malformed XML, missing diagonal entries,
+or missing entire off-diagonal pairs still fail. There is no OUTCAR fallback.
+
+
+## Visualizing Phonon Modes
+
+This script generates files to visualize the atomic motion of each phonon mode in either **VMD** or **VESTA**.
+
+For VESTA, open `CONTCAR` and save a project file (e.g. `template.vesta`) in
+your working directory. From that directory, run the installed helper:
+
+```bash
+python -m spectropy.visualization
+```
+
+| Prompt | Choice |
+| --- | --- |
+| Arrow scaling factor | For example, `0.5`; a negative value reverses the arrows. |
+| Output format | `e` for VESTA, `v` for VMD, or `b` for both. |
+| Template file | Your `.vesta` project, when using VESTA. |
+| Supercell visualization | Choose whether to repeat the cell and, if so, enter dimensions such as `2 2 1`. |
+
+The script will generate new folders (`VESTA_MODES` and/or `VMD_MODES`)
+containing the visualization files for each mode. Open `.vesta` files in
+VESTA; for VMD, go to `Extensions > Tk Console` and type:
+
+```tcl
+source VMD_MODES/mode_001.vmd
+```
+
+
 ## Input Settings
 
 Settings are grouped YAML mappings in `input.yaml`; their order does not matter.

@@ -88,6 +88,10 @@ cd MoS2_new
 spectropy displacements
 ```
 
+This reuses the bundled geometry and phonons. If you change or re-relax the
+structure, follow the [Phonopy export instructions](../../README.md#export-the-files-from-an-existing-phonon-calculation)
+instead of copying the old phonon files.
+
 SpectroPy generates the displaced POSCARs and symlinks supplied `INCAR`,
 `KPOINTS`, and `POTCAR` into each calculation directory. Run VASP through your
 own local or cluster launcher in **every generated** `displacements/ra_pos_atom*/`

@@ -27,21 +27,10 @@ Before you begin, ensure you have the following installed and available:
 Install from a checkout:
 
 ```bash
-python -m pip install .          # Core analysis
-python -m pip install '.[all]'   # Also install plotting and Phonopy dependencies
+python -m pip install '.[all]'
 spectropy --help
 ```
 
-After updating an older checkout, reinstall to refresh the command entry point.
-The library is now a `spectropy` package; `python -m spectropy` runs the same CLI.
-
-The dielectric reader accepts complete `vasprun.xml` files with either nine
-components or the standard six-component dielectric format. All printed entries
-are preserved independently. If transpose components are missing, SpectroPy
-warns and fills them by reciprocity (for example, $\epsilon_{yx}=\epsilon_{xy}$,
-without complex conjugation). These entries are inferred, not measured; this
-cannot recover a nonreciprocal response. Malformed XML, missing diagonal entries,
-or missing entire off-diagonal pairs still fail. There is no OUTCAR fallback.
 
 ## Workflow & Usage Guide
 
@@ -49,55 +38,75 @@ Follow these steps to calculate a Raman spectrum from a relaxed crystal structur
 
 ### Step 1: Prepare Your Directory
 
-Create a new directory for your Raman calculation. Inside this directory, you will need:
+Start with the following files from your completed relaxation and phonon-force
+calculations. Keep the force outputs in their existing calculation directories.
 
 | File | Contents |
 | --- | --- |
 | `CONTCAR` | Relaxed VASP structure. |
-| `band.yaml` | Phonopy Gamma-point frequencies and mass-weighted eigenvectors. |
-| `irreps.yaml` | Phonon symmetry labels for the plots. |
-| `symmetry` | Phonopy YAML symmetry output. |
+| `phonopy_disp.yaml` | Displacement records created by `phonopy -d` before the force calculations. |
+| `hf_POSCAR-001/vasprun.xml`, `hf_POSCAR-002/vasprun.xml`, … | VASP force outputs for every displacement in `phonopy_disp.yaml`, in record order. Use your actual directory names. |
 | `INCAR`, `KPOINTS`, `POTCAR` | VASP inputs to use for the finite displacement calculations. |
-| `input.yaml` | Experimental geometry and SpectroPy settings, as below. |
 
-Keep the calculation settings together in a file named `input.yaml`. Here is an example:
+Create `input.yaml` in your Raman directory to keep the calculation settings
+together; each stage reads this file:
 
 ```yaml
 polarization:
-  incident: [1, 0, 0]
-  scattered: [0, 1, 0]
-  surface_normal: z
-  mode: specific
+  incident: [1, 0, 0]       # Incident light polarized along x
+  scattered: [1, 0, 0]      # Analyze scattered light along x (ZXXZ geometry)
+  surface_normal: z        # Sample surface normal along z
+  mode: specific           # Use this incident/scattered polarization pair
 
 spectrum:
-  energies: [0.00, 1.96] # eV
-  temperature: 298 # Kelvin; room-temperature Stokes Bose factor (default)
+  energies: [0.00, 1.96]    # Laser energies in eV; 0.00 selects static response
+  temperature: 298         # Kelvin, for the Stokes Bose occupation factor
 
 displacements:
-  basis: cartesian
-  amplitude: 0.01 # Angstrom
-  difference: central
+  basis: cartesian         # Basis for candidate displacement directions
+  amplitude: 0.01          # Physical displacement length in Angstrom
+  difference: central      # Generate +/- pairs unless symmetry supplies a sign
 
 symmetry:
-  reduction: on
-  denoise: true
+  reduction: on            # Reduce both atoms and directions by symmetry
+  denoise: true            # Enforce symmetry and dielectric reciprocity
 
 broadening:
-  hwhm: 1.0 # cm^-1
-  type: lorentzian
+  hwhm: 1.0                # Peak half-width at half-maximum in cm^-1
+  type: lorentzian         # Spectral line shape
 
 output:
   per_atom:
-    enabled: true
-    raw_directional_derivatives: true
+    enabled: true          # Also save final atomic derivatives and dielectric matrices
+    raw_directional_derivatives: true # Also save raw measured-direction derivatives
 ```
 
-Here, the geometry selects xy polarization with surface normal z. The energies
-select static and 1.96 eV responses; `reduction: on`, `cartesian`, and `0.01` select
-symmetry-reduced directions with a 0.01 Å step. Central differences use ± pairs,
-`denoise: true` enables denoising, and Lorentzian peaks have a 1 cm⁻¹ half-width.
-Each stage reads `input.yaml`. The `output` section enables final atomic derivatives, raw measured-direction
-derivatives, and sampled dielectric matrices for inspection.
+#### Export the files from an existing phonon calculation
+
+Run these commands in your completed phonon-force calculation directory
+(Phonopy 3.5 syntax):
+
+```bash
+phonon_dim="4 4 1"  # Use the same dimensions as when generating the force displacements
+
+# Collect VASP forces -> FORCE_SETS. List EVERY displacement XML in
+# phonopy_disp.yaml record order; replace these example paths with yours.
+phonopy -f hf_POSCAR-001/vasprun.xml hf_POSCAR-002/vasprun.xml
+
+# Crystal symmetry of the Raman reference cell; no force constants needed.
+phonopy -c CONTCAR --symmetry > symmetry
+
+# Gamma-point frequencies and eigenvectors -> band.yaml
+phonopy -c CONTCAR --dim="$phonon_dim" \
+  --band="0 0 0 0 0 0" --band-points=2 --eigvecs
+
+# Optional Gamma-point mode labels -> irreps.yaml
+phonopy -c CONTCAR --dim="$phonon_dim" --irreps="0 0 0"
+```
+
+Place `band.yaml`, `symmetry`, and optional `irreps.yaml` beside `CONTCAR`
+and `input.yaml` in your Raman directory. See [Phonopy details](docs.md#phonopy-inputs-and-export-details)
+for cell matching and alternative workflows.
 
 ### Step 2: Generate Displacements
 
@@ -140,14 +149,9 @@ calculation/
 | `ref_poscar.vasp`, `POSCAR` | VASP structure format: equilibrium reference or individual displaced structures. |
 | `INCAR`, `KPOINTS`, `POTCAR` | Symlinks to your shared optical inputs, not copies. |
 
-Displacement vectors in the text files are fractional even when candidate
-directions are selected in the Cartesian basis; step lengths are in Å.
-
 ### Step 3: Run VASP
 
-This is the main computational step. You must now run VASP in each of the
-`displacements/ra_pos_*` subdirectories that were just created. This is your
-responsibility and will depend on your specific computer or cluster environment.
+Run VASP in each `displacements/ra_pos_*` directory using your cluster's launcher.
 Calculate the dielectric response without relaxing the displaced structures.
 
 ### Step 4: Calculate Raman Tensors
@@ -158,10 +162,8 @@ Once all VASP jobs are complete:
 spectropy tensors
 ```
 
-SpectroPy collects the displaced `vasprun.xml` files into `displacements/vasprun/`
-and parses each once for all requested laser energies. It reconstructs and
-denoises the atomic derivatives in memory, then contracts them with the
-`band.yaml` phonon eigenvectors.
+SpectroPy reads the dielectric responses, reconstructs and denoises the atomic
+derivatives, and contracts them with the phonon eigenvectors.
 
 | Output (`<E>` is the laser energy in eV) | Format and contents |
 | --- | --- |
@@ -169,10 +171,6 @@ denoises the atomic derivatives in memory, then contracts them with the
 | `epsilon_derivative_<E>` | Text: final denoised Cartesian atomic derivatives, reconstructed for every atom and direction. |
 | `raw_directional_derivative_<E>` | Text: raw real/imaginary 3×3 derivative matrices along measured directions, with displacement and sign metadata. |
 | `dielectric_tensor_<E>` | Text: unprojected real/imaginary dielectric matrices sampled from each calculated signed displacement. |
-
-For this example, the final tensors are `Raman_tensor_0.00eV` and
-`Raman_tensor_1.96eV`. Atomic and dielectric exports are enabled explicitly
-above; without the `output` section, the library default saves only mode tensors.
 
 ### Step 5: Calculate the Final Spectrum
 
@@ -197,33 +195,7 @@ see [Advanced Usage](docs.md).
 Try the [MoS2_vasp example](examples/MoS2_vasp/README.md) to analyze bundled
 VASP outputs, generate your own calculations, or compare symmetry on and off.
 
-## Additional Utilities
-
-### Visualizing Phonon Modes
-
-This script generates files to visualize the atomic motion of each phonon mode in either **VMD** or **VESTA**.
-
-For VESTA, open `CONTCAR` and save a project file (e.g. `template.vesta`) in
-your working directory. From that directory, run the installed helper:
-
-```bash
-python -m spectropy.visualization
-```
-
-| Prompt | Choice |
-| --- | --- |
-| Arrow scaling factor | For example, `0.5`; a negative value reverses the arrows. |
-| Output format | `e` for VESTA, `v` for VMD, or `b` for both. |
-| Template file | Your `.vesta` project, when using VESTA. |
-| Supercell visualization | Choose whether to repeat the cell and, if so, enter dimensions such as `2 2 1`. |
-
-The script will generate new folders (`VESTA_MODES` and/or `VMD_MODES`)
-containing the visualization files for each mode. Open `.vesta` files in
-VESTA; for VMD, go to `Extensions > Tk Console` and type:
-
-```tcl
-source VMD_MODES/mode_001.vmd
-```
+For phonon animations, see [Mode visualization](docs.md#visualizing-phonon-modes).
 
 ## Citation
 
