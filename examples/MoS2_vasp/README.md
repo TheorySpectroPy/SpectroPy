@@ -37,31 +37,20 @@ spectropy plot
 ```
 
 See the [main workflow guide](../../README.md#step-4-calculate-raman-tensors)
-for descriptions of the generated files.
+for more detailed descriptions of the commands and generated files.
 
-`input.yaml` selects central differences, symmetry reduction and denoising,
-xx polarization, and Lorentzian HWHM 1 cm⁻¹. `spectrum.cutoff: 0` enables the frequency denominator;
-`spectrum.temperature: 298` independently enables the room-temperature Stokes
-Bose factor for positive-frequency modes.
-
-Atomic derivative exports include $V_{\rm cell}/(4\pi)$ and have units of Å²;
-the sampled dielectric matrices are dimensionless and have no volume factor.
-The raw derivatives retain the **measured mixed-direction basis**, not inferred
-Cartesian slices or equivalent atoms. All nine dielectric components are retained
-independently in this example.
-See [Advanced Usage](../../docs.md) for formats and optional settings.
 
 ### Static spectrum
 
 ![MoS₂, 0.00 eV, xx polarization, minimal Cartesian displacements with denoising](Raman_0.00eV_xx.png)
 
 The prominent peaks are the in-plane $E'$ and out-of-plane $A_1'$ modes.
-This is the **static dielectric-response limit**, not a zero-energy scattering
-experiment. The plot is normalized for display; numerical spectra are not.
+This is the **static dielectric-response limit**.
+The plot is normalized for display, while numerical spectra are not.
 
 ### Scan many laser energies
 
-Instead of typing a long list, replace the energy selection with an inclusive
+To scan a range of laser energies, replace the energy selection with an inclusive
 range:
 
 ```yaml
@@ -120,13 +109,14 @@ To match this example, use PAW_PBE Mo_pv 04Feb2005 followed by S 06Sep2000
 when assembling your `POTCAR`.
 
 Check electronic convergence, successful completion, and the dielectric data
-in each `vasprun.xml`; a parseable XML file alone does not prove convergence.
-Then run the same three analysis commands above. Licensed `POTCAR` files,
-VASP executables, and cluster submission scripts are not distributed.
+in each `vasprun.xml`, then follow the Spectropy commands above.
 
 ## Compare symmetry on and off
 
-To repeat the full-versus-minimal benchmark, make two fresh working directories
+Comparing the results with symmetry enabled and disabled is useful for determining
+the sources of numerical noise present in the VASP outputs. 
+
+For this comparison, make two fresh working directories
 as above, with identical geometry, phonons, VASP binary, potentials, optical
 settings, displacement length, and Cartesian candidate basis. **Before generating
 displacements**, change only `symmetry.reduction` between the two inputs:
@@ -141,22 +131,8 @@ displacements**, change only `symmetry.reduction` between the two inputs:
 Run `spectropy displacements`, VASP, and the analysis commands separately in
 each directory. The bundled minimal data contain three signed structures:
 one Mo sign (its opposite is symmetry-generated) and both S signs. The full
-run requires its **own** electronic outputs; do not relabel or copy minimal
-responses into full-displacement folders.
+run will require its **own** electronic outputs.
 
 Compare the final `Raman_tensor_0.00eV` elements and spectra on a **common
-intensity scale**. Keeping the same `band.yaml` removes eigenvector-basis and
-phase differences from this test. The tutorial's output settings also save raw
-directional derivatives, final Cartesian atomic derivatives, and sampled
-dielectric matrices in both runs.
+intensity scale**. 
 
-Reduction and denoising are separate controls. Keep denoising equal in both
-runs to test displacement reduction; set it to `false` in both for an
-unprojected control. The minimal raw responses are along **mixed directions**,
-not directly measured x/y/z slices: compare them with the full field contracted
-onto those same directions, not with individual Cartesian entries.
-
-Exact numerical equality is not guaranteed at finite displacement. Differences
-can expose electronic noise or finite-step error; denoising cannot remove
-symmetry-allowed errors. The full benchmark XMLs are not bundled here, so this
-section describes how to run the comparison rather than asserting agreement.
