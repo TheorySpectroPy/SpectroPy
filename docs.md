@@ -534,6 +534,8 @@ LaTeX is used when installed, with a Matplotlib-font fallback.
 
 ## Collective mode workflow
 
+> **Not yet tested:** The collective mode workflow has not yet been validated end to end. Treat its results as unverified until independently checked against a trusted calculation.
+
 As an alternative to atomic displacements, use `CONTCAR`, Gamma-point
 `band.yaml`, `irreps.yaml`, and the `symmetry` file to select Raman-active modes:
 
