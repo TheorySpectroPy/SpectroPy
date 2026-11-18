@@ -12,6 +12,8 @@ A Python toolkit for simulating Raman spectra from first-principles calculations
 - **Spectrum Simulation**: Produces plottable spectra for specific polarization geometries or summed polarization channels.
 - **Mode Visualization**: Generates output files for visualizing phonon modes in **VMD** or **VESTA**.
 
+See the [documentation](docs.md) for the full workflow, settings, and file-format reference.
+
 ## Requirements and Installation
 
 Before you begin, ensure you have the following software installed and available:
