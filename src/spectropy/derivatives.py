@@ -1,24 +1,23 @@
 import os
-import sys
 
 import numpy as np
 
 from .dielectric import (collect_vasprun_files,
     read_displaced_dielectrics_many, read_dielectrics_xml)
-from .symmetry import compute_mapping_matrices, read_site_symmetries, read_symmetry_file
-from .reconstruction import reconstruct_fractional_derivatives, read_fractional_bases
-from .config import DEFAULT_INPUT, read_settings
-from .displacements import read_displacement_mode, read_displacements
+from .symmetry import read_symmetry
+from .reconstruction import (prepare_reconstruction, calculate_directional_derivatives,
+                             reconstruct_atomic_field, read_fractional_bases, project_crystal_field)
+from .config import DEFAULT_INPUT, resolve_settings
+from .displacements import read_displacement_reduction, read_displacements
 from .structure import read_structure
 from .paths import displacement_root
 from .directional import directional_document, save_directional
-from .reconstruction import project_crystal_tensor_field
 
 
-def _write_dielectrics(path, target_frequency, measurements, equilibrium=None):
+def _write_dielectrics(path, laser_energy_ev, measurements, equilibrium=None):
     """Export sampled signed-displacement responses, without projection/scaling."""
     with open(path, "w") as output:
-        output.write(f"# Dielectric samples for requested photon energy {target_frequency:.16e} eV\n")
+        output.write(f"# Dielectric samples for requested photon energy {laser_energy_ev:.16e} eV\n")
         output.write("# Nearest XML energy-grid samples; dimensionless Cartesian x,y,z matrices.\n")
         output.write("# No denoising or volume factor is applied. All nine reader components are retained.\n")
 
@@ -38,10 +37,10 @@ def _write_dielectrics(path, target_frequency, measurements, equilibrium=None):
                 block(f"Atom {atom} Sample {index}", direction, real, imaginary)
 
 
-def _write_derivatives(path, target_frequency, lattice, positions, real_tensors, imaginary_tensors):
-    factor = np.linalg.det(lattice) / (4 * np.pi)
+def _write_derivatives(path, laser_energy_ev, lattice, positions, real_tensors, imaginary_tensors):
+    factor = abs(np.linalg.det(lattice)) / (4 * np.pi)
     with open(path, "w") as output:
-        output.write(f"! epsilon derivatives calculated for laser frequency {target_frequency:.4f} eV\n")
+        output.write(f"! epsilon derivatives calculated for laser frequency {laser_energy_ev:.4f} eV\n")
         output.write("! Unit cell matrix:\n")
         for vector in lattice.T:
             output.write(f"!   {vector[0]:21.16f} {vector[1]:21.16f} {vector[2]:21.16f}\n")
@@ -68,87 +67,87 @@ def write_derivative_outputs(energy, structure, final, directory=".", *, directi
         print(f"Wrote {name}")
 
 
-def run_derivatives(input_path=DEFAULT_INPUT, use_saved_basis=None,
-                    difference_scheme=None, equilibrium_vasprun=None, *, on_reconstructed=None):
-    """Reconstruct one energy at a time; export atomic data only when requested."""
-    settings = read_settings(input_path)
-    use_saved_basis = settings.saved_basis if use_saved_basis is None else use_saved_basis
-    equilibrium_vasprun = settings.equilibrium_file if equilibrium_vasprun is None else equilibrium_vasprun
-    site_projection = getattr(settings, 'site_symmetry_projection', False)
-    dielectric_filename = 'vasprun.xml'
-    difference_scheme = settings.difference_scheme if difference_scheme is None else difference_scheme
-    automatic_reference = difference_scheme == 'forward' and equilibrium_vasprun is None
-    if difference_scheme == 'forward' and equilibrium_vasprun is None:
-        equilibrium_vasprun = str(displacement_root() / 'ra_pos_equilibrium' / dielectric_filename)
-    if difference_scheme not in {"central", "forward"}:
-        raise ValueError("difference scheme must be central or forward")
-    if difference_scheme == "forward" and not os.path.isfile(equilibrium_vasprun):
-        raise ValueError(f'Forward differences require the completed ra_pos_equilibrium/{dielectric_filename} calculation; run generated directories first')
-    for path in ("displacements.dat", "CONTCAR"):
-        if not os.path.exists(path):
-            print(f"***** {path} not found *****")
-            sys.exit(1)
-    structure = read_structure("CONTCAR")
-    if automatic_reference:
+def iter_atomic_derivatives(settings, structure):
+    """Read inputs once, then yield one complex Cartesian field per laser energy.
+
+    Numerical order is explicit: finite differences -> representative solve ->
+    atom transfer (or full-field projection). No tensor files are written here.
+    """
+    # Generation settings do not select a derivative formula. Both importers
+    # feed the same measured-vector classification and reconstruction path.
+    records = read_displacements()
+    zero_records = [d for d in records if d.is_equilibrium]
+    if len(zero_records) > 1:
+        raise ValueError('Multiple equilibrium displacement records')
+    displacements = [d for d in records if not d.is_equilibrium]
+    equilibrium_path = settings.equilibrium_file or displacement_root() / 'ra_pos_equilibrium/vasprun.xml'
+    automatic_reference = settings.equilibrium_file is None
+    equilibrium_available = (bool(zero_records) or settings.equilibrium_file is not None or
+                             (displacement_root() / 'ra_pos_equilibrium').exists())
+    reduction = read_displacement_reduction()
+    symmetry = read_symmetry(structure) if reduction != 'full' or settings.denoise else None
+    sites = symmetry.sites if reduction != 'full' else {}
+    mapping = symmetry.atom_mapping if reduction != 'full' else {a: a for a in range(1, structure.natoms + 1)}
+    transfers = symmetry.transfers if reduction != 'full' else {}
+    bases = None
+    if reduction == 'minimal' and settings.saved_basis and os.path.exists('fractional_basis.json'):
+        bases = read_fractional_bases('fractional_basis.json', displacements, structure.lattice, sites)
+    plan = prepare_reconstruction(displacements, structure.lattice, sites, mapping, transfers,
+                                  'auto', settings.denoise and reduction != 'full', bases,
+                                  equilibrium_available=equilibrium_available)
+    if plan.needs_equilibrium and not os.path.isfile(equilibrium_path):
+        raise ValueError(f'Unpaired displacements require a completed equilibrium vasprun.xml: {equilibrium_path}')
+    if plan.needs_equilibrium and automatic_reference:
         reference = read_structure(displacement_root() / 'ra_pos_equilibrium/POSCAR')
         if (reference.atom_symbols != structure.atom_symbols or
-            not np.allclose(reference.lattice, structure.lattice, atol=1e-10, rtol=0)):
+                not np.allclose(reference.lattice, structure.lattice, atol=1e-10, rtol=0)):
             raise ValueError('Equilibrium reference atom order or lattice differs from displacement reference')
         delta = reference.fractional_positions - structure.fractional_positions
         if np.max(np.linalg.norm((delta - np.rint(delta)) @ structure.lattice, axis=1)) > 1e-6:
             raise ValueError('Equilibrium reference is not the undisplaced structure')
-    displacements = read_displacements("displacements.dat")
-    mode = read_displacement_mode("displacements.dat")
-    if mode in {"atoms", "minimal"} or site_projection:
-        if not os.path.exists("symmetry"):
-            print("***** symmetry not found *****")
-            sys.exit(1)
-        rotations, translations, atom_mapping = read_symmetry_file("symmetry")
-        _, _, mapping_matrices = compute_mapping_matrices(structure.fractional_positions, rotations, translations, atom_mapping)
-        site_symmetries = read_site_symmetries("symmetry")
-    bases = None
-    if mode == "minimal":
-        if use_saved_basis and os.path.exists("fractional_basis.json"):
-            bases = read_fractional_bases("fractional_basis.json", displacements, structure.lattice, site_symmetries)
-        else:
-            # Reconstruct the independent directions explicitly from the
-            # measured seeds and their site-symmetry images. This path also
-            # supports imported displacement sets with no generated lookup.
-            print("Reconstructing independent directions from the displacement set (no lookup required).")
-    print(f"Collecting {dielectric_filename} files...")
-    collect_vasprun_files(displacements, source=dielectric_filename)
+    for atom, pairs in plan.pairs.items():
+        for index, (_, _, _, negative, rotation) in enumerate(pairs, 1):
+            method = ('central (measured +/-)' if negative is not None else
+                      'central (symmetry-supplied -)' if rotation is not None else
+                      'forward (measured signed displacement and equilibrium)')
+            print(f'Atom {atom}, direction {index}: {method}')
+
+    collect_vasprun_files(displacements)
     energies = list(settings.laser_energies)
-    print("Laser energies (eV): " + ", ".join(f"{energy:.2f}" for energy in energies))
-    equilibria = (read_dielectrics_xml(equilibrium_vasprun, energies)
-                  if difference_scheme == "forward" else [None] * len(energies))
-    measured_by_energy = read_displaced_dielectrics_many(
-        displacements, structure.lattice, energies, source=dielectric_filename)
+    equilibria = (read_dielectrics_xml(equilibrium_path, energies)
+                  if plan.needs_equilibrium else [None] * len(energies))
+    measured_by_energy = read_displaced_dielectrics_many(displacements, structure.lattice, energies)
     for energy, equilibrium, measurements in zip(energies, equilibria, measured_by_energy):
-        def reconstruct(projected):
-            sites = site_symmetries if mode != "full" else {}
-            mapping = atom_mapping if mode != "full" else {atom: atom for atom in measurements}
-            transfers = mapping_matrices if mode != "full" else {}
-            return reconstruct_fractional_derivatives(measurements, structure.lattice, sites, mapping, transfers,
-                          difference_scheme=difference_scheme, equilibrium=equilibrium,
-                          site_symmetry_projection=projected, bases=bases)
-        directional = None
-        if settings.raw_directional_derivatives:
-            sites = site_symmetries if mode != 'full' else {}
-            directional = directional_document(energy, structure, measurements, sites,
-                difference_scheme, equilibrium)
-        if site_projection and mode=='full':
-            raw=reconstruct(False)
-            field=np.array([raw[0][a]+1j*raw[1][a] for a in range(1,structure.natoms+1)])
-            projected=project_crystal_tensor_field(field,structure.lattice,structure.fractional_positions,
-                rotations,translations,species=structure.atom_symbols)
-            final=({a:projected[a-1].real for a in range(1,structure.natoms+1)},
-                   {a:projected[a-1].imag for a in range(1,structure.natoms+1)})
-        else:
-            final = reconstruct(site_projection)
-        if on_reconstructed is not None:
-            on_reconstructed(energy, structure, final)
+        complex_measurements = {atom: [(direction, real + 1j * imag) for direction, real, imag in values]
+                                for atom, values in measurements.items()}
+        reference = None if equilibrium is None else equilibrium[0] + 1j * equilibrium[1]
+        directional = calculate_directional_derivatives(complex_measurements, plan, reference)
+        field = reconstruct_atomic_field(directional, plan)
+        if settings.denoise and reduction == 'full':
+            field = project_crystal_field(field, symmetry.operations)
+        yield energy, field, directional, measurements, equilibrium
+
+
+def write_atomic_outputs(energy, structure, field, directional, measurements, equilibrium, settings):
+    """Convert complex arrays only at the text-output boundary."""
+    parts = ({a + 1: tensor.real for a, tensor in enumerate(field)},
+             {a + 1: tensor.imag for a, tensor in enumerate(field)})
+    debug = None
+    if settings.raw_directional_derivatives:
+        debug = directional_document(energy, structure, measurements, {},
+                                     'auto', equilibrium, directional=directional)
+    write_derivative_outputs(energy, structure, parts, directional=debug)
+    name = f'dielectric_tensor_{energy:.2f}'
+    _write_dielectrics(name, energy, measurements, equilibrium)
+    print(f'Wrote {name}')
+
+
+def run_derivatives(input_path=DEFAULT_INPUT, use_saved_basis=None,
+                    equilibrium_vasprun=None, *, settings=None):
+    """Python entry point for atomic exports; the CLI uses run_tensors."""
+    settings = resolve_settings(settings, input_path, saved_basis=use_saved_basis,
+                                equilibrium_file=equilibrium_vasprun)
+    structure = read_structure('CONTCAR')
+    for energy, field, directional, measurements, equilibrium in iter_atomic_derivatives(settings, structure):
         if settings.per_atom_output:
-            write_derivative_outputs(energy, structure, final, directional=directional)
-            name = f"dielectric_tensor_{energy:.2f}"
-            _write_dielectrics(name, energy, measurements, equilibrium)
-            print(f"Wrote {name}")
+            write_atomic_outputs(energy, structure, field, directional, measurements, equilibrium, settings)

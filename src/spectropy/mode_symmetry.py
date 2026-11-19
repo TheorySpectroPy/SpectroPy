@@ -1,40 +1,7 @@
 """Numerical symmetry operations and partner representations for Raman calculations."""
 
-from pathlib import Path
 import numpy as np
-import yaml
-
-def symmetry_operations(structure, symmetry_path="symmetry", tolerance=1e-3):
-    """Return atom permutations and Cartesian rotations, preserving species."""
-    with Path(symmetry_path).open() as stream:
-        data = yaml.load(stream, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader))
-    positions = structure.fractional_positions
-    species = np.asarray(structure.atom_symbols)
-    operations = []
-    for entry in data["space_group_operations"]:
-        fractional = np.asarray(entry["rotation"], dtype=float)
-        rotation = structure.lattice.T @ fractional @ np.linalg.inv(structure.lattice.T)
-        if not np.allclose(rotation.T @ rotation, np.eye(3), atol=1e-6, rtol=0):
-            raise ValueError("Symmetry rotation is not orthogonal in Cartesian coordinates")
-        moved = positions @ fractional.T + np.asarray(entry["translation"])
-        permutation = []
-        for index, position in enumerate(moved):
-            delta = positions - position
-            delta -= np.rint(delta)
-            distances = np.linalg.norm(delta @ structure.lattice, axis=1)
-            distances[species != species[index]] = np.inf
-            target = int(np.argmin(distances))
-            if distances[target] > tolerance:
-                raise ValueError(f"Symmetry does not map atom {index + 1} onto a matching species")
-            permutation.append(target)
-        if len(set(permutation)) != structure.natoms:
-            raise ValueError("Symmetry atom mapping is not a permutation")
-        operations.append((np.asarray(permutation), rotation))
-    if not operations:
-        raise ValueError("symmetry contains no space_group_operations")
-    return operations
-
-
+from .symmetry import symmetry_operations
 
 
 def mode_representations(phonons, operations, groups, tolerance=1e-5, strict=True):

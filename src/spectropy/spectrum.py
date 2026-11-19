@@ -2,35 +2,19 @@ import numpy as np
 import os
 import sys
 import re
-from .config import DEFAULT_INPUT, Settings, read_settings, write_settings
+from .config import DEFAULT_INPUT, resolve_settings
 from .phonons import read_registered_modes, read_irreps as _read_irreps
 
 
-def get_user_input(input_path=DEFAULT_INPUT):
-    settings = read_settings(input_path)
-    if os.path.exists(input_path):
-        print(f"Reading experimental geometry from '{input_path}'...")
-        if (
-            settings.incident_polarization is None
-            or settings.scattered_polarization is None
-            or settings.surface_normal is None
-        ):
-            raise ValueError(f"{input_path} needs incident/scattered polarizations and a surface normal")
-        pol_incident = np.array(settings.incident_polarization)
-        pol_scattered = np.array(settings.scattered_polarization)
-        axis = settings.surface_normal
-    else:
-        print("Please define the experimental geometry.")
-        pol_incident_str = input("Enter polarization of incident light (e.g., 1.0 0.0 0.0): ")
-        pol_scattered_str = input("Enter polarization of scattered light (e.g., 1.0 0.0 0.0): ")
-        axis = input("Enter surface normal direction (x, y, or z): ").lower()
+def polarization_vectors(settings):
+    """Validate configured geometry without prompting or modifying input.yaml."""
+    if settings.polarization != 'specific':
+        raise ValueError('polarization.mode must be specific')
+    if settings.incident_polarization is None or settings.scattered_polarization is None:
+        raise ValueError('polarization.incident and polarization.scattered must be supplied in input.yaml')
+    return (np.asarray(settings.incident_polarization),
+            np.asarray(settings.scattered_polarization), settings.surface_normal)
 
-        pol_incident = np.array(pol_incident_str.split(), dtype=float)
-        pol_scattered = np.array(pol_scattered_str.split(), dtype=float)
-
-        write_settings(input_path, Settings(tuple(pol_incident), tuple(pol_scattered), axis))
-
-    return pol_incident, pol_scattered, axis
 
 def read_band_yaml(filepath="band.yaml"):
     print(f"Reading phonon modes from {filepath}...")
@@ -145,16 +129,12 @@ def run_raman_tensor(dielectric_derivatives_path, _phonons=None, output_prefix="
                         frequencies, tensors, read_irreps())
 
 
-def write_intensities(energy, frequencies, tensors, labels, input_path=DEFAULT_INPUT):
+def calculate_intensities(frequencies, tensors, settings):
+    """Return frequencies in cm^-1 and intensities, using one shared convention."""
     from .tensors import THZ_TO_CM1
 
-    settings = read_settings(input_path)
-    pol_incident, pol_scattered, axis = get_user_input(input_path)
+    pol_incident, pol_scattered, _ = polarization_vectors(settings)
     intensities = np.abs(np.einsum('i,mik,k->m', pol_scattered, tensors, pol_incident))**2
-    average = None
-    if settings.polarization == "average":
-        axes = {"x": [1, 2], "y": [0, 2], "z": [0, 1]}[axis]
-        average = np.sum(np.abs(tensors[:, axes][:, :, axes])**2, axis=(1, 2))
     freq_cm1 = frequencies * THZ_TO_CM1
     cutoff = settings.frequency_cutoff_cm1
     factor = np.ones_like(frequencies, dtype=float)
@@ -167,11 +147,11 @@ def write_intensities(energy, frequencies, tensors, labels, input_path=DEFAULT_I
         exponent = freq_cm1[positive] * 1.4387768775039338 / settings.temperature
         factor[positive] /= -np.expm1(-exponent)
     intensities *= factor
-    if average is not None:
-        average *= factor
-    outputs = {"complex": intensities}
-    if average is not None:
-        outputs["polarization_averaged"] = average
+    return freq_cm1, {"complex": intensities}
+
+
+def write_intensities(energy, frequencies, tensors, labels, settings):
+    freq_cm1, outputs = calculate_intensities(frequencies, tensors, settings)
     for kind, values in outputs.items():
         path = f"Raman_intensity_{kind}_{energy:.2f}eV"
         with open(path, "w") as stream:
@@ -180,18 +160,18 @@ def write_intensities(energy, frequencies, tensors, labels, input_path=DEFAULT_I
         print(f"Wrote {path}")
 
 
-def run_spectrum(input_path=DEFAULT_INPUT):
+def run_spectrum(input_path=DEFAULT_INPUT, *, settings=None):
     """Calculate intensities from final mode tensors, not atomic intermediates."""
     from .tensors import read_raman_tensors
 
-    settings = read_settings(input_path)
+    settings = resolve_settings(settings, input_path)
     paths = [f"Raman_tensor_{energy:.2f}eV" for energy in settings.laser_energies]
     for path in paths:
         if not os.path.isfile(path):
             raise FileNotFoundError(f"Missing {path}; run `spectropy tensors` first")
     for energy, path in zip(settings.laser_energies, paths):
-        frequencies, tensors, labels = read_raman_tensors(path)
-        write_intensities(energy, frequencies, tensors, labels, input_path)
+        mode_indices, frequencies, tensors, labels = read_raman_tensors(path)
+        write_intensities(energy, frequencies, tensors, labels, settings)
 
 
 if __name__ == "__main__":

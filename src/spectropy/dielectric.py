@@ -12,12 +12,12 @@ def _xml_only(source):
         raise ValueError('dielectric_source must be vasprun.xml; other VASP dielectric readers were removed')
 
 
-def read_dielectric(path, target_frequency, source='vasprun.xml'):
+def read_dielectric(path, laser_energy_ev, source='vasprun.xml'):
     _xml_only(source)
-    return read_diel_from_xml(path, target_frequency)
+    return read_diel_from_xml(path, laser_energy_ev)
 
-def read_diel_from_xml(xml_path, target_frequency):
-    return read_dielectrics_xml(xml_path, [target_frequency])[0]
+def read_diel_from_xml(xml_path, laser_energy_ev):
+    return read_dielectrics_xml(xml_path, [laser_energy_ev])[0]
 
 
 def read_dielectrics_xml(xml_path, energies):
@@ -94,7 +94,7 @@ def collect_vasprun_files(displacements, destination=None, source="vasprun.xml")
             sys.exit(1)
 
 
-def read_displaced_dielectrics(displacements, lattice, target_frequency, directory=None, source="vasprun.xml"):
+def read_displaced_dielectrics(displacements, lattice, laser_energy_ev, directory=None, source="vasprun.xml"):
     _xml_only(source)
     from .paths import displacement_root
     if directory is None:
@@ -102,7 +102,7 @@ def read_displaced_dielectrics(displacements, lattice, target_frequency, directo
     measured = defaultdict(list)
     for displacement in displacements:
         filename = os.path.join(directory, f"{displacement.name}.xml")
-        real, imaginary = read_dielectric(filename, target_frequency, source)
+        real, imaginary = read_dielectric(filename, laser_energy_ev, source)
         direction = displacement.fractional_vector @ lattice
         measured[displacement.atom_index].append((direction, real, imaginary))
     return dict(measured)

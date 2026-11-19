@@ -4,7 +4,7 @@ from matplotlib import rc
 import os
 import re
 import shutil
-from .config import DEFAULT_INPUT, read_settings
+from .config import DEFAULT_INPUT, resolve_settings
 
 if shutil.which('latex'):
     rc('text', usetex=True)
@@ -14,27 +14,26 @@ else:
     rc('text', usetex=False)
     rc('font', family='sans-serif')
 
-def gaussian(x, center, amplitude, fwhm):
-    sigma = fwhm / (2 * np.sqrt(2 * np.log(2)))
+def gaussian(x, center, amplitude, hwhm):
+    sigma = hwhm / np.sqrt(2 * np.log(2))
     return amplitude * np.exp(-((x - center)**2) / (2 * sigma**2))
 
-def lorentzian(x, center, amplitude, fwhm):
-    hwhm = fwhm / 2.0
+def lorentzian(x, center, amplitude, hwhm):
     return amplitude * (hwhm**2) / ((x - center)**2 + hwhm**2)
 
 
-def broaden_spectrum(freqs, intensities, fwhm, b_type):
-    if not np.isfinite(fwhm) or fwhm <= 0:
-        raise ValueError("Linewidth FWHM must be finite and positive")
-    # At most FWHM/20 spacing bounds worst-offset Lorentzian peak loss
+def broaden_spectrum(freqs, intensities, hwhm, b_type):
+    if not np.isfinite(hwhm) or hwhm <= 0:
+        raise ValueError("Linewidth HWHM must be finite and positive")
+    # At most HWHM/10 spacing bounds worst-offset Lorentzian peak loss
     # to 1 - 1/(1+0.05**2), approximately 0.25%, independent of span.
     left, right = max(0, min(freqs) - 50), max(freqs) + 50
-    count = max(2, int(np.ceil((right-left)/(fwhm/20)))+1)
+    count = max(2, int(np.ceil((right-left)/(hwhm/10)))+1)
     x_dense = np.linspace(left, right, count)
     y_dense = np.zeros_like(x_dense)
     profile = gaussian if b_type == 'g' else lorentzian
     for frequency, intensity in zip(freqs, intensities):
-        y_dense += profile(x_dense, frequency, intensity, fwhm)
+        y_dense += profile(x_dense, frequency, intensity, hwhm)
     return x_dense, y_dense
 
 
@@ -55,11 +54,11 @@ def read_intensity_file(input_file):
     return np.asarray(frequencies), np.asarray(intensities), modes
 
 
-def write_broadened_spectrum(input_file, fwhm, b_type):
+def write_broadened_spectrum(input_file, hwhm, b_type):
     frequencies, intensities, _ = read_intensity_file(input_file)
     if frequencies.size == 0:
         return None
-    x_dense, y_dense = broaden_spectrum(frequencies, intensities, fwhm, b_type)
+    x_dense, y_dense = broaden_spectrum(frequencies, intensities, hwhm, b_type)
 
     basename = os.path.basename(input_file)
     energy = basename.removeprefix("Raman_intensity_complex_")
@@ -89,11 +88,7 @@ def format_mode_for_latex(mode_str):
     return f'${mode_str}$'
 
 
-def read_broadening_settings(input_path=DEFAULT_INPUT):
-    settings = read_settings(input_path)
-    return settings.broadening_fwhm, "g" if settings.broadening_type == "gaussian" else "l"
-
-def process_and_plot(input_file, fwhm=5.0, b_type='l', title=None):
+def process_and_plot(input_file, hwhm=1.0, b_type='l', title=None):
     try:
         freqs, intensities, modes = read_intensity_file(input_file)
         if freqs.size == 0:
@@ -102,7 +97,7 @@ def process_and_plot(input_file, fwhm=5.0, b_type='l', title=None):
         print(f"      Error reading {os.path.basename(input_file)}: {e}")
         return False
 
-    x_dense, y_dense = broaden_spectrum(freqs, intensities, fwhm, b_type)
+    x_dense, y_dense = broaden_spectrum(freqs, intensities, hwhm, b_type)
 
     if np.max(y_dense) > 0:
         y_dense /= np.max(y_dense)
@@ -150,34 +145,30 @@ def process_and_plot(input_file, fwhm=5.0, b_type='l', title=None):
     print(f"   -> Created {out_name}")
     return True
 
-def run_automation():
+def run_automation(input_path=DEFAULT_INPUT, *, settings=None):
     base_path = os.getcwd()
     print(f"--- Automated Raman Plotter (Style: Publication) ---")
     print(f"Scanning: {base_path}")
     
-    fwhm, b_type = read_broadening_settings()
-    print(f"Broadening: {'Lorentzian' if b_type == 'l' else 'Gaussian'}, HWHM = {fwhm/2:g} cm-1")
+    settings = resolve_settings(settings, input_path)
+    hwhm = settings.broadening_hwhm
+    b_type = 'g' if settings.broadening_type == 'gaussian' else 'l'
+    print(f"Broadening: {'Lorentzian' if b_type == 'l' else 'Gaussian'}, HWHM = {hwhm:g} cm-1")
 
     count = 0
     broadened_count = 0
-    avg_re = re.compile(r"^Raman_intensity_polarization_averaged_.+eV$")
     raw_complex_re = re.compile(r"^Raman_intensity_complex_(?!broadening_).+eV$")
     for root, dirs, files in os.walk(base_path):
         for fname in files:
             if raw_complex_re.match(fname):
                 full_path = os.path.join(root, fname)
                 try:
-                    if write_broadened_spectrum(full_path, fwhm, b_type) is not None:
+                    if write_broadened_spectrum(full_path, hwhm, b_type) is not None:
                         broadened_count += 1
                 except Exception as error:
                     print(f"      Error broadening {fname}: {error}")
                 print(f"Processing: {os.path.join(os.path.basename(root), fname)}")
-                if process_and_plot(full_path, fwhm, b_type):
-                    count += 1
-            if avg_re.match(fname):
-                full_path = os.path.join(root, fname)
-                print(f"Processing: {os.path.join(os.path.basename(root), fname)}")
-                if process_and_plot(full_path, fwhm, b_type):
+                if process_and_plot(full_path, hwhm, b_type):
                     count += 1
 
     print(f"\nSuccess! Generated {count} plots and {broadened_count} numerical broadened spectra.")

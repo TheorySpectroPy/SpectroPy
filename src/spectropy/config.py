@@ -18,17 +18,19 @@ class Settings:
     scattered_polarization: tuple[float, float, float] | None = None
     surface_normal: str | None = None
     laser_energies: tuple[float, ...] = (0.0,)
-    displacement_amplitude: tuple[float, float, float] | None = None
+    displacement_amplitude: tuple[float, float, float] = (0.03, 0.03, 0.03)
     broadening_hwhm: float = 1.0
     broadening_type: str = "lorentzian"
     polarization: str = "specific"
     frequency_cutoff_cm1: float | None = None
     temperature: float = 298.0
-    difference_scheme: str = "central"
-    site_symmetry_projection: bool = False
+    difference_scheme: str = "central"  # Generation only; atomic analysis infers from records.
+    denoise: bool = False
     symmetry: str = "off"
     displacement_basis: str = "cartesian"
+    phonopy_file: str | None = None
     equilibrium_file: str | None = None
+    generate_equilibrium: bool = True
     saved_basis: bool = False
     mode_q: float = 0.01
     mode_indices: tuple[int, ...] | None = None
@@ -37,12 +39,6 @@ class Settings:
     mode_results_directory: str = "mode_results"
     per_atom_output: bool = False
     raw_directional_derivatives: bool = False
-
-    @property
-    def broadening_fwhm(self):
-        """Full width for internal line-shape routines; public settings use HWHM."""
-        return 2 * self.broadening_hwhm
-
 
 # Public YAML paths map to the existing internal settings used by the solvers.
 _SECTIONS = {
@@ -55,9 +51,11 @@ _SECTIONS = {
     "displacements": {
         "basis": "displacement_basis", "amplitude": "displacement_amplitude",
         "difference": "difference_scheme", "equilibrium_file": "equilibrium_file",
+        "equilibrium": "generate_equilibrium",
+        "phonopy_file": "phonopy_file",
     },
     "symmetry": {
-        "reduction": "symmetry", "denoise": "site_symmetry_projection",
+        "reduction": "symmetry", "denoise": "denoise",
         "saved_basis": "saved_basis",
     },
     "broadening": {"hwhm": "broadening_hwhm", "type": "broadening_type"},
@@ -213,7 +211,7 @@ def _settings_from_mapping(values):
 
     def path_value(name):
         value = values.get(name, getattr(defaults, name))
-        if value is None and name == "equilibrium_file":
+        if value is None and name in {"equilibrium_file", "phonopy_file"}:
             return None
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"{_SETTING_PATHS[name]} must be a nonempty path string")
@@ -228,7 +226,7 @@ def _settings_from_mapping(values):
     surface_normal = (choice("surface_normal", ("x", "y", "z"))
                       if values.get("surface_normal") is not None else None)
     energies = _laser_energies(values.get("laser_energies", list(defaults.laser_energies)))
-    amplitude = None
+    amplitude = defaults.displacement_amplitude
     if values.get("displacement_amplitude") is not None:
         amplitude = numbers("displacement_amplitude", None)
         if len(amplitude) == 1:
@@ -261,15 +259,17 @@ def _settings_from_mapping(values):
         broadening_hwhm=bounded_number("broadening_hwhm", defaults.broadening_hwhm, positive=True),
         broadening_type=choice("broadening_type", ("lorentzian", "gaussian"),
                                {"l": "lorentzian", "g": "gaussian"}),
-        polarization=choice("polarization", ("specific", "average")),
+        polarization=choice("polarization", ("specific",)),
         temperature=bounded_number("temperature", defaults.temperature),
         frequency_cutoff_cm1=(bounded_number("frequency_cutoff_cm1", None)
                               if values.get("frequency_cutoff_cm1") is not None else None),
         difference_scheme=choice("difference_scheme", ("central", "forward")),
-        site_symmetry_projection=boolean("site_symmetry_projection"),
+        denoise=boolean("denoise"),
         symmetry=choice("symmetry", ("on", "off", "atoms")),
         displacement_basis=choice("displacement_basis", ("cartesian", "fractional")),
+        phonopy_file=path_value("phonopy_file"),
         equilibrium_file=path_value("equilibrium_file"),
+        generate_equilibrium=boolean("generate_equilibrium"),
         saved_basis=boolean("saved_basis"),
         mode_q=bounded_number("mode_q", defaults.mode_q, positive=True),
         mode_indices=indices,
@@ -279,6 +279,17 @@ def _settings_from_mapping(values):
         per_atom_output=per_atom_output,
         raw_directional_derivatives=raw_directional_derivatives,
     )
+
+
+def settings_from_mapping(values: dict) -> Settings:
+    """Validate a native grouped input mapping, applying the input.yaml defaults."""
+    flat = _flatten_sections(values)
+    if flat.get('phonopy_file'):
+        for key in ('difference_scheme', 'displacement_basis', 'displacement_amplitude'):
+            if key in flat:
+                raise ValueError(f'Omit {_SETTING_PATHS[key]} when importing phonopy_file; '
+                                 'vectors/signs come from the dataset and derivative formulas are inferred')
+    return _settings_from_mapping(flat)
 
 
 def read_settings(path: str | Path = DEFAULT_INPUT) -> Settings:
@@ -292,20 +303,39 @@ def read_settings(path: str | Path = DEFAULT_INPUT) -> Settings:
         return Settings()
     try:
         values = yaml.load(path.read_text(), Loader=_SettingsLoader)
-        return _settings_from_mapping(_flatten_sections({} if values is None else values))
+        return settings_from_mapping({} if values is None else values)
     except (yaml.YAMLError, ValueError) as error:
         raise ValueError(f"Invalid settings in {path}: {error}") from error
 
 
+def _settings_values(settings):
+    values = {name: list(value) if isinstance(value, tuple) else value
+              for name, value in asdict(settings).items() if value is not None}
+    if settings.phonopy_file:
+        for name in ('difference_scheme', 'displacement_basis', 'displacement_amplitude'):
+            values.pop(name, None)
+    return values
+
+
+def resolve_settings(settings=None, input_path=DEFAULT_INPUT, **overrides):
+    """Resolve a command once; CLI overrides use the same validation as YAML."""
+    settings = read_settings(input_path) if settings is None else settings
+    if not any(value is not None for value in overrides.values()):
+        return settings
+    values = _settings_values(settings)
+    values.update({key: list(value) if isinstance(value, tuple) else value
+                   for key, value in overrides.items() if value is not None})
+    if values.get('phonopy_file'):
+        for key in ('difference_scheme', 'displacement_basis', 'displacement_amplitude'):
+            if overrides.get(key) is not None:
+                raise ValueError(f'{_SETTING_PATHS[key]} cannot override imported Phonopy displacements')
+    return _settings_from_mapping(values)
+
+
 def write_settings(path: str | Path, settings: Settings) -> None:
     """Write grouped YAML without rounding scientific settings."""
-    def mapping(settings):
-        return {
-            name: list(value) if isinstance(value, tuple) else value
-            for name, value in asdict(settings).items() if value is not None
-        }
 
-    values = mapping(_settings_from_mapping(mapping(settings)))
+    values = _settings_values(_settings_from_mapping(_settings_values(settings)))
     def nested(schema):
         return {key: nested(value) if isinstance(value, dict) else values[value]
                 for key, value in schema.items() if isinstance(value, dict) or value in values}

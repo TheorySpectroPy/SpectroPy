@@ -2,7 +2,7 @@ polarization:
   incident: [1, 0, 0]
   scattered: [1, 0, 0]
   surface_normal: z
-  mode: average
+  mode: specific
 
 spectrum:
   energies: [0.00] # eV; static response for the basic demonstration

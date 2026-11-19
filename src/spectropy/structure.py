@@ -30,8 +30,22 @@ def read_structure(path: str | Path = "CONTCAR") -> Structure:
     lines = Path(path).read_text().splitlines()
     if len(lines) < 8:
         raise ValueError(f"Incomplete VASP structure: {path}")
-    scale = float(lines[1])
-    lattice = np.array([list(map(float, line.split()[:3])) for line in lines[2:5]]) * scale
+    scale = np.array(list(map(float, lines[1].split())))
+    if scale.size not in (1, 3) or not np.isfinite(scale).all():
+        raise ValueError(f"Expected one or three finite POSCAR scaling factors: {path}")
+    lattice = np.array([list(map(float, line.split()[:3])) for line in lines[2:5]])
+    if lattice.shape != (3, 3) or not np.isfinite(lattice).all():
+        raise ValueError(f"Invalid POSCAR lattice: {path}")
+    volume = abs(np.linalg.det(lattice))
+    if not np.isfinite(volume) or volume == 0:
+        raise ValueError(f"POSCAR lattice must have finite nonzero volume: {path}")
+    if scale.size == 1 and scale[0] < 0:
+        # A negative scalar specifies the desired volume, not a negative length.
+        scale = np.array([np.cbrt(-scale[0] / volume)])
+    elif np.any(scale <= 0):
+        raise ValueError(f"POSCAR scaling factors must be positive (or one negative volume): {path}")
+    # Three factors scale Cartesian components (columns), not lattice vectors.
+    lattice = lattice * scale
     try:
         counts = np.array(lines[6].split(), dtype=int)
         symbols = tuple(lines[5].split())
@@ -47,7 +61,7 @@ def read_structure(path: str | Path = "CONTCAR") -> Structure:
         for line in lines[coordinate_line + 1: coordinate_line + 1 + int(counts.sum())]
     ])
     if lines[coordinate_line].lower().startswith(("c", "k")):
-        coordinates = coordinates @ np.linalg.inv(lattice)
+        coordinates = (coordinates * scale) @ np.linalg.inv(lattice)
     return Structure(lines[0], lattice, symbols, counts, coordinates)
 
 

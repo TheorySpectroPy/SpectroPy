@@ -4,8 +4,9 @@ import re
 
 import numpy as np
 
-from .config import DEFAULT_INPUT, read_settings
+from .config import DEFAULT_INPUT, resolve_settings
 from .phonons import read_registered_modes, read_irreps
+from .structure import read_structure
 
 
 THZ_TO_CM1 = 33.35641
@@ -34,7 +35,11 @@ def write_raman_tensors(path, frequencies, tensors, labels=None, mode_indices=No
 
 
 def read_raman_tensors(path):
-    """Read mode tensors without assuming transpose symmetry or rounding."""
+    """Return mode indices, frequencies, tensors, and labels in file order.
+
+    Mode indices remain 1-based and may describe only a subset of modes.
+    No transpose symmetry or rounding is imposed.
+    """
     lines = [line.strip() for line in Path(path).read_text().splitlines()
              if line.strip() and not line.lstrip().startswith("#")]
     number = r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
@@ -66,37 +71,36 @@ def read_raman_tensors(path):
             raise ValueError("nonfinite tensor")
     except (ValueError, OverflowError) as error:
         raise ValueError(f"Invalid Raman tensor file {path}: {error}") from error
-    return np.asarray(frequencies), np.asarray(tensors), labels
+    return np.asarray(indices), np.asarray(frequencies), np.asarray(tensors), labels
 
 
-def contract_atomic_derivatives(structure, final, phonons):
-    """final uses (dielectric row, column, displacement) in inverse Angstrom."""
-    expected = set(range(1, structure.natoms + 1))
-    if phonons.natoms != structure.natoms or any(set(part) != expected for part in final):
+def contract_atomic_derivatives(structure, field, phonons):
+    """Contract complex D[atom,alpha,beta,i] in 1/Angstrom with aligned modes."""
+    if phonons.natoms != structure.natoms:
         raise ValueError("Incomplete atomic field or inconsistent phonon atom count")
-    field = np.asarray([final[0][atom] + 1j * final[1][atom] for atom in sorted(expected)])
+    field = np.asarray(field, dtype=complex)
     if field.shape != (structure.natoms, 3, 3, 3) or not np.isfinite(field).all():
         raise ValueError("Invalid atomic derivative field")
     # Eigen-displacements already include inverse square-root atomic masses.
-    return np.linalg.det(structure.lattice) / (4 * np.pi) * np.einsum(
+    return abs(np.linalg.det(structure.lattice)) / (4 * np.pi) * np.einsum(
         "jabi,mji->mab", field, phonons.eigendisplacements)
 
 
 def run_tensors(input_path=DEFAULT_INPUT, use_saved_basis=None,
-                difference_scheme=None, equilibrium_vasprun=None):
-    from .derivatives import run_derivatives
+                equilibrium_vasprun=None, *, settings=None):
+    from .derivatives import iter_atomic_derivatives, write_atomic_outputs
 
     # Validate options and atom registration before processing large XML files.
-    read_settings(input_path)
+    settings = resolve_settings(settings, input_path, saved_basis=use_saved_basis,
+                                equilibrium_file=equilibrium_vasprun)
+    structure = read_structure('CONTCAR')
     phonons = read_registered_modes(reference="CONTCAR")
     labels = read_irreps()
 
-    def save(energy, structure, final):
-        tensors = contract_atomic_derivatives(structure, final, phonons)
+    for energy, field, directional, measurements, equilibrium in iter_atomic_derivatives(settings, structure):
+        tensors = contract_atomic_derivatives(structure, field, phonons)
         path = f"Raman_tensor_{energy:.2f}eV"
         write_raman_tensors(path, phonons.frequencies_thz, tensors, labels)
         print(f"Wrote {path}")
-
-    run_derivatives(input_path, use_saved_basis=use_saved_basis,
-                    difference_scheme=difference_scheme, equilibrium_vasprun=equilibrium_vasprun,
-                    on_reconstructed=save)
+        if settings.per_atom_output:
+            write_atomic_outputs(energy, structure, field, directional, measurements, equilibrium, settings)

@@ -111,11 +111,15 @@ def read_registered_modes(path="band.yaml", reference=None, provenance=None):
 
 
 def read_irreps(path: str | Path = "irreps.yaml") -> list[str] | None:
+    """Return labels indexed by mode number minus one, filling missing modes."""
     file_path = Path(path)
     if not file_path.is_file():
         return None
     labels: dict[int, str] = {}
     for mode in yaml.safe_load(file_path.read_text())["normal_modes"]:
         for band_index in mode["band_indices"]:
+            if (not isinstance(band_index, int) or isinstance(band_index, bool)
+                    or band_index < 1 or band_index in labels):
+                raise ValueError(f"Invalid or duplicate mode index in {path}: {band_index}")
             labels[band_index] = mode["ir_label"]
-    return [labels.get(index + 1, "---") for index in range(len(labels))]
+    return [labels.get(index, "---") for index in range(1, max(labels, default=0) + 1)]

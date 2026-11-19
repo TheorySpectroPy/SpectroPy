@@ -12,7 +12,7 @@ import yaml
 from .structure import read_structure, write_structure
 from .phonons import read_gamma_modes, align_mode_atoms
 from .mode_symmetry import symmetry_operations, mode_representations
-from .config import read_settings
+from .config import resolve_settings
 from .paths import link_vasp_inputs
 
 
@@ -41,17 +41,16 @@ def _reference(reference):
 
 
 def generate(q=None, modes=None, reference=None,
-             output=None, minimum_frequency=None):
+             output=None, minimum_frequency=None, *, settings=None):
     """Enumerate +/-Q for every Raman-active partner by default.
 
     Every selected mode has its own explicit positive and negative calculation.
     Explicit mode IDs bypass automatic activity/frequency filters.
     """
-    settings = read_settings()
-    q = settings.mode_q if q is None else q
-    modes = settings.mode_indices if modes is None else modes
-    output = settings.mode_displacements_directory if output is None else output
-    minimum_frequency = settings.mode_minimum_frequency if minimum_frequency is None else minimum_frequency
+    settings = resolve_settings(settings, mode_q=q, mode_indices=modes,
+                                mode_displacements_directory=output, mode_minimum_frequency=minimum_frequency)
+    q, modes = settings.mode_q, settings.mode_indices
+    output, minimum_frequency = settings.mode_displacements_directory, settings.mode_minimum_frequency
     if not np.isfinite(q) or q <= 0:
         raise ValueError("Q must be finite and positive (Angstrom sqrt(amu))")
     if not np.isfinite(minimum_frequency) or minimum_frequency < 0:
@@ -165,11 +164,12 @@ def generate(q=None, modes=None, reference=None,
     return manifest
 
 
-def reconstruct(directory=None, energies=None, output=None):
-    from .dielectric import read_dielectric
-    settings = read_settings()
-    directory = settings.mode_displacements_directory if directory is None else directory
-    output = settings.mode_results_directory if output is None else output
+def reconstruct(directory=None, energies=None, output=None, *, settings=None):
+    from .dielectric import read_dielectrics_xml
+    from .tensors import write_raman_tensors
+    settings = resolve_settings(settings, mode_displacements_directory=directory,
+                                mode_results_directory=output, laser_energies=energies)
+    directory, output = settings.mode_displacements_directory, settings.mode_results_directory
     root = Path(directory)
     data = json.loads((root/"mode_manifest.json").read_text())
     if data.get("schema") != 2 or data.get("calculator") != "vasp":
@@ -178,8 +178,6 @@ def reconstruct(directory=None, energies=None, output=None):
         raise ValueError("Manifest Q must be finite and positive")
     if settings.difference_scheme != "central":
         raise ValueError("Collective mode tensors currently require displacements.difference: central")
-    if settings.polarization != "specific":
-        raise ValueError("Collective intensity output currently requires polarization.mode: specific")
     volume = abs(np.linalg.det(data["lattice"]))
     mode_ids = [seed["mode_index"] for block in data["groups"] for seed in block["seeds"]]
     if not mode_ids or len(set(mode_ids)) != len(mode_ids):
@@ -193,7 +191,7 @@ def reconstruct(directory=None, energies=None, output=None):
     if destination.exists():
         raise FileExistsError(f"Use a fresh output directory: {destination}")
     destination.mkdir(parents=True)
-    def dielectric(name, energy):
+    def dielectric_samples(name):
         folder = root/name
         actual = read_structure(folder/"POSCAR")
         seed = next(seed for block in data["groups"] for seed in block["seeds"]
@@ -203,27 +201,24 @@ def reconstruct(directory=None, energies=None, output=None):
         delta = actual.fractional_positions-expected
         if actual.atom_symbols != data["symbols"] or not np.allclose(actual.lattice,data["lattice"],atol=1e-9,rtol=0) or np.max(np.linalg.norm((delta-np.rint(delta)) @ actual.lattice,axis=1)) > 1e-7:
             raise ValueError(f"Mode-displacement geometry/order mismatch in {folder}")
-        real, imag = read_dielectric(folder/"vasprun.xml", energy)
-        return real+1j*imag
-    for energy in settings.laser_energies if energies is None else energies:
+        return [real + 1j * imag for real, imag in read_dielectrics_xml(folder/'vasprun.xml', settings.laser_energies)]
+    samples = {name: dielectric_samples(name)
+               for block in data['groups'] for seed in block['seeds']
+               for name in (seed['positive'], seed['negative'])}
+    for energy_index, energy in enumerate(settings.laser_energies):
         tensors = {}
         for block in data["groups"]:
             for seed in block["seeds"]:
-                positive = dielectric(seed["positive"], energy)
-                negative = dielectric(seed["negative"], energy)
+                positive = samples[seed['positive']][energy_index]
+                negative = samples[seed['negative']][energy_index]
                 tensors[seed["mode_index"]] = volume/(4*np.pi)*(positive-negative)/(2*data["q"])
         np.savez(destination/f"raw_mode_tensors_{energy:.2f}eV.npz",
                  modes=sorted(tensors), tensors=np.asarray([tensors[m] for m in sorted(tensors)]))
-        with (destination/f"Raman_tensor_{energy:.2f}eV").open("w") as stream, \
-             (destination/f"Raman_intensity_complex_{energy:.2f}eV").open("w") as intensity:
-            stream.write("# Mode Freq(THz) Freq(cm-1) Raman Tensor (Real + i*Imaginary)\n")
-            for mode, tensor in sorted(tensors.items()):
-                frequency = data["frequencies_thz"][mode-1]
-                stream.write(f"{mode:5d} {frequency:.12e} {frequency*33.356407889:.12e}\n")
-                for row in tensor:
-                    stream.write(" ".join(f"{z.real:.16e}{z.imag:+.16e}j" for z in row)+"\n")
-                stream.write("\n")
-                if settings.incident_polarization is not None and settings.scattered_polarization is not None:
-                    value = abs(np.asarray(settings.scattered_polarization) @ tensor @ settings.incident_polarization)**2
-                    intensity.write(f"{frequency*33.356407889:.12e} {value:.16e} ---\n")
+        indices = sorted(tensors)
+        labels = {mode: block.get("ir_label", "---")
+                  for block in data["groups"] for mode in block["modes"]}
+        write_raman_tensors(destination/f"Raman_tensor_{energy:.2f}eV",
+                            [data["frequencies_thz"][mode-1] for mode in indices],
+                            [tensors[mode] for mode in indices],
+                            [labels[mode] for mode in indices], mode_indices=indices)
     print(f"Reconstructed collective mode tensors in {destination}")

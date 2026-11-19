@@ -39,6 +39,10 @@ spectropy plot
 See the [main workflow guide](../../README.md#step-4-calculate-raman-tensors)
 for more detailed descriptions of the commands and generated files.
 
+The supplied settings also export `epsilon_derivative_0.00` (final Cartesian
+atomic derivatives), `raw_directional_derivative_0.00` (measured directional
+derivatives), and `dielectric_tensor_0.00` (sampled dielectric tensors).
+
 
 ### Static spectrum
 
@@ -85,7 +89,11 @@ instead of copying the old phonon files.
 SpectroPy generates the displaced POSCARs and symlinks supplied `INCAR`,
 `KPOINTS`, and `POTCAR` into each calculation directory. Run VASP through your
 own local or cluster launcher in **every generated** `displacements/ra_pos_atom*/`
-directory.
+directory. By default an additional `displacements/ra_pos_equilibrium/` directory
+is generated for debugging; run it too when generating your own data. It does
+not change central-difference precedence. The bundled three-displacement
+dataset needs no equilibrium XML because its opposite signs are measured or
+supplied by symmetry.
 
 Suggestions for displaced optical calculations:
 

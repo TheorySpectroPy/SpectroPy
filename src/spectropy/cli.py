@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import argparse
-import importlib
 import os
 from collections.abc import Callable
 from . import __version__
+from .config import read_settings, resolve_settings
 
 
 def _run_in_directory(workdir: str, operation: Callable[[], None]) -> None:
@@ -14,44 +14,6 @@ def _run_in_directory(workdir: str, operation: Callable[[], None]) -> None:
         operation()
     finally:
         os.chdir(previous)
-
-
-def _commands(symmetry: str | None, basis: str | None = None) -> dict[str, tuple[str, Callable[[], None]]]:
-    def stage(module: str, function: str) -> Callable[[], None]:
-        def run() -> None:
-            getattr(importlib.import_module(module), function)()
-        return run
-
-    def spectrum() -> None:
-        getattr(importlib.import_module('spectropy.spectrum'), "run_spectrum")()
-
-    def displacements() -> None:
-        getattr(importlib.import_module('spectropy.displacements'), "run_displacements")(symmetry, basis=basis)
-
-    descriptions = {
-        "off": "Generate all +/- basis-axis displacements on every atom.",
-        "atoms": "Generate all +/- basis-axis displacements on atomic representatives.",
-        "on": "Generate the site-symmetry-reduced displacement set.",
-    }
-
-    return {
-        "displacements": (
-            descriptions.get(symmetry, "Generate displacements using input.yaml settings."),
-            displacements,
-        ),
-        "symmetry": (
-            "Write the symmetry operations that map equivalent atoms.",
-            stage('spectropy.symmetry', "run_mapping"),
-        ),
-        "spectrum": (
-            "Calculate polarized intensities for every laser energy in input.yaml.",
-            spectrum,
-        ),
-        "plot": (
-            "Interactively broaden and plot generated Raman intensities.",
-            stage('spectropy.plotting', "run_automation"),
-        ),
-    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -88,6 +50,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     displacement_parser.add_argument("--basis", choices=("cartesian", "fractional"), default=None,
                                      help="Override input.yaml displacements.basis (default: cartesian); lengths are in Angstrom.")
+    displacement_parser.add_argument("--phonopy", dest="phonopy_file", metavar="YAML", default=None,
+                                     help="Import a Phonopy single-atom displacement set instead of selecting directions; overrides displacements.phonopy_file.")
     for name, help_text in (
         ("symmetry", "Write atom-to-atom symmetry-operation matrices."),
         ("tensors", "Calculate final mode Raman tensors from displaced dielectric responses."),
@@ -97,7 +61,6 @@ def main(argv: list[str] | None = None) -> int:
         command_parser = subparsers.add_parser(name, help=help_text, description=help_text)
         add_workdir(command_parser)
         if name == "tensors":
-            command_parser.add_argument("--difference", choices=("central", "forward"), default=None, help="Override input.yaml displacements.difference (default: central)")
             command_parser.add_argument("--equilibrium-file", "--equilibrium-vasprun", dest="equilibrium_vasprun", help="Override input.yaml displacements.equilibrium_file; otherwise use the generated equilibrium XML")
             command_parser.add_argument("--saved-basis", action=argparse.BooleanOptionalAction, default=None,
                                         help="Override input.yaml symmetry.saved_basis (default: false)")
@@ -121,25 +84,40 @@ def main(argv: list[str] | None = None) -> int:
     if not os.path.isdir(args.workdir):
         subparsers.choices[args.command].error(f"work directory does not exist: {args.workdir}")
 
-    if args.command in {"mode-displacements", "mode-tensors"}:
-        def collective():
-            module = importlib.import_module('spectropy.modes')
-            if args.command == "mode-displacements":
-                module.generate(q=args.q, modes=args.modes,
-                                output=args.output, minimum_frequency=args.minimum_frequency)
-            else:
-                module.reconstruct(directory=args.directory, energies=args.energies, output=args.output)
-        _run_in_directory(args.workdir, collective)
-    elif args.command == "tensors":
-        def derive():
-            importlib.import_module('spectropy.tensors').run_tensors(
-                use_saved_basis=args.saved_basis, difference_scheme=args.difference,
-                equilibrium_vasprun=args.equilibrium_vasprun)
-        _run_in_directory(args.workdir, derive)
+    def execute():
+        settings = read_settings()
+        if args.command == "displacements":
+            from .displacements import run_displacements
+            resolved = resolve_settings(settings, symmetry=args.symmetry, displacement_basis=args.basis,
+                                        phonopy_file=args.phonopy_file)
+            run_displacements(settings=resolved)
+        elif args.command == "tensors":
+            from .tensors import run_tensors
+            resolved = resolve_settings(settings, equilibrium_file=args.equilibrium_vasprun,
+                                        saved_basis=args.saved_basis)
+            run_tensors(settings=resolved)
+        elif args.command == "mode-displacements":
+            from .modes import generate
+            resolved = resolve_settings(settings, mode_q=args.q, mode_indices=args.modes,
+                                        mode_displacements_directory=args.output,
+                                        mode_minimum_frequency=args.minimum_frequency)
+            generate(settings=resolved)
+        elif args.command == "mode-tensors":
+            from .modes import reconstruct
+            resolved = resolve_settings(settings, mode_displacements_directory=args.directory,
+                                        mode_results_directory=args.output, laser_energies=args.energies)
+            reconstruct(settings=resolved)
+        elif args.command == "spectrum":
+            from .spectrum import run_spectrum
+            run_spectrum(settings=settings)
+        elif args.command == "plot":
+            from .plotting import run_automation
+            run_automation(settings=settings)
+        elif args.command == "symmetry":
+            from .symmetry import run_mapping
+            run_mapping()
 
-    else:
-        commands = _commands(getattr(args, "symmetry", None), getattr(args, "basis", None))
-        _run_in_directory(args.workdir, commands[args.command][1])
+    _run_in_directory(args.workdir, execute)
     return 0
 
 

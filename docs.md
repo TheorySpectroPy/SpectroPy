@@ -82,6 +82,17 @@ spectropy --help
 After updating a checkout, reinstall if entry points or dependencies changed.
 `python -m spectropy` provides the same commands as `spectropy`.
 
+### NERSC / Perlmutter
+
+SpectroPy itself is CPU Python post-processing; CPU/GPU selection applies to
+the external VASP calculations. For installation, group binary verification,
+Slurm allocations and a combined force/Raman example, see the
+[raman_workflow NERSC guide](https://github.com/asuradev99/raman_workflow/blob/main/docs/nersc.md).
+Use the same SpectroPy commit in preparation and analysis. Verify the actual
+dielectric XML format from the chosen NERSC build before submitting an array;
+six-component XML is accepted with a warning but does not provide independent
+off-diagonal pairs.
+
 ## Required scientific inputs
 
 ### Inputs by stage

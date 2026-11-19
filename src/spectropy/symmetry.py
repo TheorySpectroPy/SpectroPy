@@ -2,7 +2,92 @@ import numpy as np
 import os
 import sys
 import yaml
+from dataclasses import dataclass
 from .structure import read_structure
+
+
+def frac_to_cart_rotation(rotation, lattice):
+    """Convert a fractional rotation; lattice vectors are stored as rows."""
+    return lattice.T @ rotation @ np.linalg.inv(lattice.T)
+
+
+def prepare_operations(lattice, positions, rotations, translations, species=None, tolerance=1e-4):
+    """Return (0-based atom permutation, Cartesian rotation) for each operation.
+
+    Matching uses periodic Cartesian distances in Angstrom and preserves species.
+    The result is geometry-only and can be reused at every photon energy.
+    """
+    positions = np.asarray(positions, dtype=float)
+    rotations = np.asarray(rotations, dtype=float)
+    translations = np.asarray(translations, dtype=float)
+    natoms = len(positions)
+    if (rotations.ndim != 3 or rotations.shape[1:] != (3, 3) or not len(rotations)
+            or translations.shape != (len(rotations), 3)):
+        raise ValueError('Invalid space-group operations')
+    symbols = None if species is None else np.asarray(species)
+    if symbols is not None and len(symbols) != natoms:
+        raise ValueError('Species length differs from atomic structure')
+    operations = []
+    for fractional, translation in zip(rotations, translations):
+        cartesian = frac_to_cart_rotation(fractional, lattice)
+        if not np.allclose(cartesian @ cartesian.T, np.eye(3), atol=1e-8, rtol=0):
+            raise ValueError('Space-group Cartesian rotation must be orthogonal')
+        permutation = []
+        for atom, moved in enumerate(positions @ fractional.T + translation):
+            delta = moved - positions
+            delta -= np.rint(delta)
+            distances = np.linalg.norm(delta @ lattice, axis=1)
+            if symbols is not None:
+                distances = np.where(symbols == symbols[atom], distances, np.inf)
+            target = int(np.argmin(distances))
+            if not np.isfinite(distances[target]) or distances[target] > tolerance:
+                raise ValueError('Space-group operation does not bijectively map the atomic structure')
+            permutation.append(target)
+        if len(set(permutation)) != natoms:
+            raise ValueError('Space-group operation does not bijectively map the atomic structure')
+        operations.append((np.asarray(permutation), cartesian))
+    return operations
+
+
+@dataclass(frozen=True)
+class CrystalSymmetry:
+    fractional_rotations: np.ndarray
+    translations: np.ndarray
+    atom_mapping: dict
+    sites: dict
+    operations: list
+    transfers: dict
+
+
+def _site_entries(data):
+    return {int(entry['atom']): {
+        'wyckoff': entry.get('Wyckoff'), 'point_group': entry.get('site_point_group'),
+        'rotations': np.asarray(entry['rotations'], dtype=float),
+    } for entry in data.get('site_symmetries', [])}
+
+
+def read_symmetry(structure, path='symmetry'):
+    """Read once and prepare the symmetry shared by atomic and mode workflows."""
+    with open(path) as stream:
+        data = yaml.safe_load(stream)
+    rotations = np.asarray([op['rotation'] for op in data['space_group_operations']])
+    translations = np.asarray([op['translation'] for op in data['space_group_operations']])
+    mapping = {int(k): int(v) for k, v in data['atom_mapping'].items()}
+    operations = prepare_operations(structure.lattice, structure.fractional_positions,
+                                    rotations, translations, structure.atom_symbols)
+    chosen = _transfer_indices(mapping, rotations, operations)
+    transfers = {pair: operations[i][1] for pair, i in chosen.items()}
+    return CrystalSymmetry(rotations, translations, mapping, _site_entries(data), operations, transfers)
+
+
+def symmetry_operations(structure, symmetry_path='symmetry', tolerance=1e-4):
+    """Read operations for mode analysis, including files without site metadata."""
+    with open(symmetry_path) as stream:
+        data = yaml.safe_load(stream)
+    return prepare_operations(structure.lattice, structure.fractional_positions,
+                              [op['rotation'] for op in data['space_group_operations']],
+                              [op['translation'] for op in data['space_group_operations']],
+                              structure.atom_symbols, tolerance)
 
 
 def read_symmetry_file(filepath="symmetry"):
@@ -20,61 +105,30 @@ def read_site_symmetries(filepath="symmetry"):
     with open(filepath, 'r') as f:
         data = yaml.safe_load(f)
 
-    site_symmetries = {}
-    for entry in data['site_symmetries']:
-        site_symmetries[int(entry['atom'])] = {
-            "wyckoff": entry['Wyckoff'],
-            "point_group": entry['site_point_group'],
-            "rotations": np.array(entry['rotations']),
-        }
-    return site_symmetries
+    return _site_entries(data)
 
-def compute_mapping_matrices(positions, rotations, translations, atom_mapping):
-    inequivalent_indices = sorted(list(set(atom_mapping.values())))
+def _transfer_indices(atom_mapping, rotations, operations):
+    """Choose the same operation for both fractional and Cartesian consumers."""
+    chosen = {}
+    for atom, representative in atom_mapping.items():
+        candidates = [i for i, (permutation, _) in enumerate(operations)
+                      if permutation[representative - 1] == atom - 1]
+        if not candidates:
+            raise ValueError(f'No symmetry operation connects atoms {representative} and {atom}')
+        # Preserve the diagonal-first preference and operation ordering.
+        chosen[(representative, atom)] = next(
+            (i for i in candidates if np.array_equal(rotations[i], np.diag(np.diag(rotations[i])))),
+            candidates[0])
+    return chosen
 
-    equivalent_groups = {idx: [] for idx in inequivalent_indices}
-    for atom_idx, maps_to_idx in atom_mapping.items():
-        equivalent_groups[maps_to_idx].append(atom_idx)
 
-    final_mapping_matrices = {}
-
-    #Determine which symmetry operation connects the equivalent atom to the inequivalent one
-    for ineq_idx in inequivalent_indices:
-        for eq_idx in equivalent_groups[ineq_idx]:
-            pos_ineq = positions[ineq_idx - 1]
-            pos_eq = positions[eq_idx - 1]
-
-            found_matrices = []
-            for i in range(len(rotations)):
-                rot = rotations[i]
-                trans = translations[i]
-
-                pos_prime = rot @ pos_ineq + trans
-
-                #Subtract nearest lattice translation
-                delta = pos_prime - pos_eq
-                periodic_delta = delta - np.round(delta)
-
-                if np.allclose(periodic_delta, 0, atol=1e-5):
-                    found_matrices.append(rot)
-
-            if not found_matrices:
-                print(f"Warning: No symmetry operation found between atom {ineq_idx} and {eq_idx}!")
-                continue
-
-            #Preferentially pick a diagonal matrix as the representative operation
-            chosen_matrix = None
-            for matrix in found_matrices:
-                if np.count_nonzero(matrix - np.diag(np.diagonal(matrix))) == 0:
-                    chosen_matrix = matrix
-                    break
-
-            if chosen_matrix is None:
-                chosen_matrix = found_matrices[0]
-
-            final_mapping_matrices[(ineq_idx, eq_idx)] = chosen_matrix
-
-    return inequivalent_indices, equivalent_groups, final_mapping_matrices
+def compute_mapping_matrices(positions, rotations, translations, atom_mapping, lattice, species=None):
+    """Select fractional transfers using physical-lattice atom permutations."""
+    operations = prepare_operations(lattice, positions, rotations, translations, species)
+    representatives = sorted(set(atom_mapping.values()))
+    groups = {atom: [a for a, rep in atom_mapping.items() if rep == atom] for atom in representatives}
+    chosen = _transfer_indices(atom_mapping, rotations, operations)
+    return representatives, groups, {pair: rotations[i] for pair, i in chosen.items()}
 
 
 def run_mapping():
@@ -85,13 +139,16 @@ def run_mapping():
             sys.exit(1)
 
     print("Reading CONTCAR and symmetry files...")
-    positions = read_structure("CONTCAR").fractional_positions
-    rotations, translations, atom_mapping = read_symmetry_file()
+    structure = read_structure("CONTCAR")
+    symmetry = read_symmetry(structure)
 
     print("Finding symmetry matrices that map equivalent atoms...")
-    inequivalent_indices, equivalent_groups, final_mapping_matrices = compute_mapping_matrices(
-        positions, rotations, translations, atom_mapping
-    )
+    inequivalent_indices = sorted(set(symmetry.atom_mapping.values()))
+    equivalent_groups = {rep: [atom for atom, mapped in symmetry.atom_mapping.items() if mapped == rep]
+                         for rep in inequivalent_indices}
+    inverse = np.linalg.inv(structure.lattice.T)
+    final_mapping_matrices = {pair: inverse @ rotation @ structure.lattice.T
+                              for pair, rotation in symmetry.transfers.items()}
     num_inequivalent = len(inequivalent_indices)
     print(f"Found {num_inequivalent} inequivalent atoms.")
 

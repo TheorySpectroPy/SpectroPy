@@ -1,21 +1,29 @@
 """Measured-direction raw output, with explicit physical units."""
 from pathlib import Path
 import numpy as np
-from .reconstruction import fractional_finite_differences
+from .reconstruction import fractional_finite_differences, prepare_pairs
 
 
 def directional_document(energy, structure, measurements, sites,
-                         scheme='central', equilibrium=None):
+                         scheme='central', equilibrium=None, *, directional=None):
     lattice = np.asarray(structure.lattice)
     factor = abs(np.linalg.det(lattice)) / (4*np.pi)
     samples = []
     eq = None if equilibrium is None else equilibrium[0] + 1j*equilibrium[1]
-    for atom, values in measurements.items():
-        rotations = sites.get(atom, {'rotations': np.eye(3)[None]})['rotations']
-        measured = [(v, real + 1j*imag) for v, real, imag in values]
-        for index, (unit, response, length, generated) in enumerate(
-                fractional_finite_differences(measured, rotations, lattice,
-                                             difference_scheme=scheme, equilibrium=eq), 1):
+    if directional is None:
+        directional = {}
+        for atom, values in measurements.items():
+            rotations = sites.get(atom, {'rotations': np.eye(3)[None]})['rotations']
+            measured = [(v, real + 1j*imag) for v, real, imag in values]
+            directional[atom] = fractional_finite_differences(measured, rotations, lattice,
+                                                             difference_scheme=scheme, equilibrium=eq)
+    for atom, slices in directional.items():
+        pairs = prepare_pairs([value[0] for value in measurements[atom]], [], lattice,
+                              'auto', equilibrium_available=eq is not None)
+        for index, (unit, response, length, generated) in enumerate(slices, 1):
+            method = scheme
+            if method == 'auto':
+                method = 'central' if generated or pairs[index - 1][3] is not None else 'forward'
             cart = unit @ lattice
             scale = np.linalg.norm(cart)
             response = response * factor / scale
@@ -23,14 +31,16 @@ def directional_document(energy, structure, measurements, sites,
                 unit_cartesian=(cart/scale).tolist(), unit_fractional=unit.tolist(),
                 displacement_length_angstrom=float(length*scale),
                 negative_from_symmetry=generated,
-                calculated_signs=1 if generated or scheme == 'forward' else 2,
+                difference_scheme=method,
+                calculated_signs=1 if generated or method == 'forward' else 2,
                 real=response.real.tolist(), imaginary=response.imag.tolist()))
     if not samples:
         raise ValueError('No measured directional responses')
+    methods = {sample['difference_scheme'] for sample in samples}
     return dict(energy_eV=float(energy),
         response_units='angstrom^2', dielectric_basis='cartesian',
         displacement_basis='measured unit directions',
-        volume_factor_angstrom3=float(factor), difference_scheme=scheme,
+        volume_factor_angstrom3=float(factor), difference_scheme=next(iter(methods)) if len(methods) == 1 else 'mixed',
         lattice_angstrom=lattice.tolist(), natoms=int(structure.natoms),
         samples=samples)
 
@@ -80,6 +90,7 @@ def save_directional(path, document):
             "! Fractional direction: " + numbers(arrays["unit_fractional"]),
             f"! Displacement length (angstrom): {step:.16e}",
             f"! Calculated signs: {sample['calculated_signs']}",
+            f"! Difference scheme: {sample['difference_scheme']}",
             "! Negative from symmetry: " + str(bool(sample["negative_from_symmetry"])).lower(),
             "! Real Part",
             *[numbers(row) for row in arrays["real"]],

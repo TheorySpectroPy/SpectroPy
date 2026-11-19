@@ -9,7 +9,7 @@ A Python toolkit for simulating Raman spectra from first-principles calculations
 - **Automated Setup**: Generates calculation directories and displaced `POSCAR` files.
 - **Data Harvesting**: Automatically collects results from multiple `vasprun.xml` files.
 - **Frequency-Dependent Tensors**: Calculates complex Raman tensors for user-specified laser energies.
-- **Spectrum Simulation**: Produces plottable spectra for specific polarization geometries or summed polarization channels.
+- **Spectrum Simulation**: Produces plottable spectra for specified incident and scattered polarizations.
 - **Mode Visualization**: Generates output files for visualizing phonon modes in **VMD** or **VESTA**.
 
 See the [documentation](docs.md) for the full workflow, settings, and file-format reference.
@@ -68,6 +68,7 @@ displacements:
   basis: cartesian         # Basis for candidate displacement directions
   amplitude: 0.01          # Physical displacement length in Angstrom
   difference: central      # Generate +/- pairs unless symmetry supplies a sign
+  equilibrium: true        # Also generate the undisplaced reference; false disables it
 
 symmetry:
   reduction: on            # Reduce both atoms and directions by symmetry
