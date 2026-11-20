@@ -66,12 +66,37 @@ def _site_entries(data):
     } for entry in data.get('site_symmetries', [])}
 
 
+def _fractional_operations(structure, data):
+    entries = data['space_group_operations']
+    rotations = np.asarray([op['rotation'] for op in entries])
+    translations = np.asarray([op['translation'] for op in entries], dtype=float)
+    if 'phonopy_version' not in data:
+        return rotations, translations
+
+    # Phonopy prints five decimal places in its human-readable symmetry report.
+    # Recover each reported operation without changing the report's ordering or
+    # adding operations. Centered cells can repeat a rotation at several origins.
+    import spglib
+    cell = (structure.lattice, structure.fractional_positions,
+            np.repeat(np.arange(1, len(structure.counts) + 1), structure.counts))
+    symmetry = spglib.get_symmetry(cell, symprec=float(data.get('symmetry_tolerance', 1e-5)))
+    if symmetry is None:
+        raise ValueError('Could not recover full-precision Phonopy operations from the structure')
+    for i, (rotation, reported) in enumerate(zip(rotations, translations)):
+        candidates = symmetry['translations'][np.all(symmetry['rotations'] == rotation, axis=(1, 2))]
+        delta = candidates - reported
+        matches = candidates[np.all(np.abs(delta - np.rint(delta)) <= 5.01e-6, axis=1)]
+        if len(matches) != 1:
+            raise ValueError(f'Phonopy operation {i + 1} has {len(matches)} full-precision matches')
+        translations[i] = matches[0]
+    return rotations, translations
+
+
 def read_symmetry(structure, path='symmetry'):
     """Read once and prepare the symmetry shared by atomic and mode workflows."""
     with open(path) as stream:
         data = yaml.safe_load(stream)
-    rotations = np.asarray([op['rotation'] for op in data['space_group_operations']])
-    translations = np.asarray([op['translation'] for op in data['space_group_operations']])
+    rotations, translations = _fractional_operations(structure, data)
     mapping = {int(k): int(v) for k, v in data['atom_mapping'].items()}
     operations = prepare_operations(structure.lattice, structure.fractional_positions,
                                     rotations, translations, structure.atom_symbols)
@@ -84,10 +109,9 @@ def symmetry_operations(structure, symmetry_path='symmetry', tolerance=1e-4):
     """Read operations for mode analysis, including files without site metadata."""
     with open(symmetry_path) as stream:
         data = yaml.safe_load(stream)
+    rotations, translations = _fractional_operations(structure, data)
     return prepare_operations(structure.lattice, structure.fractional_positions,
-                              [op['rotation'] for op in data['space_group_operations']],
-                              [op['translation'] for op in data['space_group_operations']],
-                              structure.atom_symbols, tolerance)
+                              rotations, translations, structure.atom_symbols, tolerance)
 
 
 def read_symmetry_file(filepath="symmetry"):
